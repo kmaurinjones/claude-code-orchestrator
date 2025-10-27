@@ -1,0 +1,135 @@
+"""TASKS.md graph manager with dependency tracking."""
+
+import re
+import networkx as nx
+from pathlib import Path
+from typing import List, Dict
+from ..models import Task, TaskStatus, VerificationCheck
+
+
+class TaskGraph:
+    def __init__(self, tasks_path: Path = Path(".agentic/current/TASKS.md")):
+        self.tasks_path = tasks_path
+        self.graph = nx.DiGraph()
+        self._tasks: Dict[str, Task] = {}
+
+        # Load existing tasks if file exists
+        if self.tasks_path.exists():
+            self._load()
+
+    def _load(self) -> None:
+        """Load tasks from existing TASKS.md file."""
+        content = self.tasks_path.read_text()
+
+        # Parse format: - [📋] task-001: Description (priority: 10) or - [📋] task-001: Description
+        # Make priority optional
+        task_pattern = r'-\s*\[(.+?)\]\s*(task-\S+):\s*(.+?)(?:\s*\(priority:\s*(\d+)\))?$'
+
+        # Verification check pattern: - Verify: type:target "description or pattern"
+        # For pattern_in_file, the quoted part is the pattern, not just description
+        verify_pattern = r'-\s*Verify:\s*(\w+):(.+?)\s+"(.+?)"'
+
+        current_task = None
+
+        for line in content.split('\n'):
+            # Check for task line
+            match = re.search(task_pattern, line)
+            if match:
+                emoji, task_id, description, priority = match.groups()
+
+                # Map emoji to status
+                status = TaskStatus.BACKLOG
+                for ts in TaskStatus:
+                    if ts.value == emoji:
+                        status = ts
+                        break
+
+                task = Task(
+                    id=task_id,
+                    title=description.strip(),
+                    description=description.strip(),
+                    status=status,
+                    priority=int(priority) if priority else 5  # Default priority 5
+                )
+
+                self.add_task(task)
+                current_task = task
+                continue
+
+            # Check for verification line
+            verify_match = re.search(verify_pattern, line)
+            if verify_match and current_task:
+                verify_type, target, desc = verify_match.groups()
+
+                # For pattern_in_file, the description is also the pattern to search for
+                expected_val = desc.strip() if verify_type.strip() == "pattern_in_file" else None
+
+                check = VerificationCheck(
+                    type=verify_type.strip(),
+                    target=target.strip(),
+                    expected=expected_val,
+                    description=desc.strip()
+                )
+
+                current_task.acceptance_criteria.append(check)
+
+    def add_task(self, task: Task) -> None:
+        """Add task to graph."""
+        self._tasks[task.id] = task
+        self.graph.add_node(task.id)
+
+        for dep_id in task.depends_on:
+            self.graph.add_edge(dep_id, task.id)
+
+    def get_ready_tasks(self) -> List[Task]:
+        """Get tasks whose dependencies are all complete."""
+        ready = []
+
+        for task_id, task in self._tasks.items():
+            if task.status != TaskStatus.BACKLOG:
+                continue
+
+            deps_complete = all(
+                self._tasks[dep_id].status == TaskStatus.COMPLETE
+                for dep_id in task.depends_on
+                if dep_id in self._tasks
+            )
+
+            if deps_complete:
+                ready.append(task)
+
+        return sorted(ready, key=lambda t: t.priority, reverse=True)
+
+    def has_cycles(self) -> bool:
+        """Check for circular dependencies."""
+        try:
+            nx.find_cycle(self.graph)
+            return True
+        except nx.NetworkXNoCycle:
+            return False
+
+    def save(self) -> None:
+        """Write current task state to TASKS.md."""
+        lines = ["# TASKS.md\n\n"]
+
+        for status in TaskStatus:
+            tasks_in_status = [t for t in self._tasks.values() if t.status == status]
+            if not tasks_in_status:
+                continue
+
+            lines.append(f"## {status.name.title()}\n")
+            for task in tasks_in_status:
+                lines.append(f"- [{status.value}] {task.id}: {task.title} (priority: {task.priority})")
+                if task.depends_on:
+                    lines.append(f"  - Depends on: {', '.join(task.depends_on)}")
+                if task.related_goals:
+                    lines.append(f"  - Goals: {', '.join(task.related_goals)}")
+                if task.acceptance_criteria:
+                    for check in task.acceptance_criteria:
+                        lines.append(f'  - Verify: {check.type}:{check.target} "{check.description}"')
+                if task.summary:
+                    lines.append(f"  - Summary: {task.summary[-1][:100]}")
+                lines.append("\n")
+
+        self.tasks_path.parent.mkdir(parents=True, exist_ok=True)
+        self.tasks_path.write_text("\n".join(lines))

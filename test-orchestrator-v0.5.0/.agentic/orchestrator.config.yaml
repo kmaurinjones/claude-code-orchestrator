@@ -1,0 +1,3 @@
+min_steps: 3
+max_steps: 10
+max_parallel_tasks: 5
