@@ -75,6 +75,8 @@ class Task(BaseModel):
     summary: List[str] = Field(default_factory=list)
     next_action: Optional[str] = None
     acceptance_criteria: List[VerificationCheck] = Field(default_factory=list)
+    test_history: List[str] = Field(default_factory=list)
+    review_feedback: List[str] = Field(default_factory=list)
 
 
 class LogEvent(BaseModel):
@@ -101,6 +103,9 @@ class OrchestratorConfig(BaseModel):
     min_steps: int = Field(default=50, description="Minimum steps before considering stopping")
     max_steps: int = Field(default=100, description="Maximum steps")
     max_parallel_tasks: int = Field(default=3, description="Maximum number of tasks to run in parallel (reduced for MVP-first approach)")
+    subagent_max_turns: int = Field(default=15, ge=1, le=50, description="Maximum number of turns each subagent conversation may use")
+    skip_integration_tests: bool = Field(default=True, description="Skip pytest tests marked with @pytest.mark.integration during verification")
+    pytest_addopts: Optional[str] = Field(default=None, description="Additional PYTEST_ADDOPTS applied during verification runs")
 
     @classmethod
     def load(cls, config_path: Path) -> "OrchestratorConfig":

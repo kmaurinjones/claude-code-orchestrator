@@ -1,15 +1,57 @@
 """Subagent wrapper for Claude Code CLI in non-interactive mode."""
 
-import subprocess
+from datetime import datetime
 import json
 import os
+import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from .. import __version__
 from ..models import EventType
 from .logger import EventLogger
+
+
+def _generate_directory_tree(workspace: Path, max_depth: int = 3, max_files: int = 50) -> str:
+    """Generate a concise directory tree for context."""
+    lines = []
+    file_count = 0
+
+    # Directories to ignore
+    ignore = {".agentic", ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
+              ".ruff_cache", "node_modules", ".next", "dist", "build", ".DS_Store"}
+
+    def add_tree(path: Path, prefix: str = "", depth: int = 0):
+        nonlocal file_count
+        if depth > max_depth or file_count >= max_files:
+            return
+
+        try:
+            items = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+            items = [i for i in items if i.name not in ignore and not i.name.startswith('.')]
+
+            for i, item in enumerate(items):
+                if file_count >= max_files:
+                    lines.append(f"{prefix}... (truncated)")
+                    return
+
+                is_last = i == len(items) - 1
+                current_prefix = "└── " if is_last else "├── "
+                next_prefix = "    " if is_last else "│   "
+
+                if item.is_dir():
+                    lines.append(f"{prefix}{current_prefix}{item.name}/")
+                    add_tree(item, prefix + next_prefix, depth + 1)
+                else:
+                    lines.append(f"{prefix}{current_prefix}{item.name}")
+                    file_count += 1
+        except PermissionError:
+            pass
+
+    lines.append(f"{workspace.name}/")
+    add_tree(workspace)
+    return "\n".join(lines)
 
 
 def find_claude_executable() -> Optional[str]:
@@ -51,7 +93,8 @@ class Subagent:
         workspace: Path,
         max_turns: int = 10,
         claude_executable: Optional[str] = None,
-        next_action: Optional[str] = None
+        next_action: Optional[str] = None,
+        model: str = "haiku"  # Default to Haiku for cost efficiency
     ):
         self.task_id = task_id
         self.task_description = task_description
@@ -64,12 +107,59 @@ class Subagent:
         self.max_turns = max_turns
         self.claude_executable = claude_executable or find_claude_executable()
         self.next_action = next_action
+        self.model = model
+
+    def _log_detailed_execution(
+        self,
+        instruction: str,
+        raw_stdout: str,
+        raw_stderr: str,
+        result: Dict[str, Any],
+        returncode: int,
+        duration_seconds: float
+    ) -> None:
+        """Log detailed subagent execution for debugging."""
+        # Create logs directory in .agentic
+        log_dir = self.workspace / "logs" / "subagents"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        log_file = log_dir / f"{self.trace_id}.json"
+
+        detailed_log = {
+            "trace_id": self.trace_id,
+            "parent_trace_id": self.parent_trace_id,
+            "task_id": self.task_id,
+            "task_description": self.task_description,
+            "step": self.step,
+            "timestamp": datetime.now().isoformat(),
+            "model": self.model,
+            "workspace": str(self.workspace),
+            "max_turns": self.max_turns,
+            "duration_seconds": round(duration_seconds, 2),
+            "instruction_sent": instruction,
+            "claude_cli_returncode": returncode,
+            "raw_stdout": raw_stdout,
+            "raw_stderr": raw_stderr if raw_stderr else None,
+            "parsed_result": result,
+            "next_action_feedback": self.next_action
+        }
+
+        with open(log_file, 'w') as f:
+            json.dump(detailed_log, f, indent=2)
 
     def execute(self) -> Dict[str, Any]:
         """Execute task via Claude Code CLI."""
+        start_time = datetime.now()
+
         # Ensure workspace is absolute
         if isinstance(self.workspace, Path):
             self.workspace = self.workspace.resolve()
+        else:
+            self.workspace = Path(self.workspace).resolve()
+
+        # Validate workspace is absolute (defensive check)
+        if not self.workspace.is_absolute():
+            raise ValueError(f"Subagent workspace must be absolute: {self.workspace}")
 
         # Log spawn with absolute workspace path
         self.logger.log(
@@ -110,7 +200,7 @@ class Subagent:
                     "--dangerously-skip-permissions",
                     "--add-dir", str(self.workspace.absolute()),
                     "--max-turns", str(self.max_turns),
-                    "--model", "haiku"  # Latest Haiku for subagents
+                    "--model", self.model  # Configurable model (haiku by default, sonnet for audits)
                 ],
                 capture_output=True,
                 text=True,
@@ -125,6 +215,17 @@ class Subagent:
                     "returncode": result.returncode,
                     "stdout": result.stdout
                 }
+
+                # Log detailed execution for CLI errors
+                duration = (datetime.now() - start_time).total_seconds()
+                self._log_detailed_execution(
+                    instruction=instruction,
+                    raw_stdout=result.stdout,
+                    raw_stderr=result.stderr,
+                    result=error_response,
+                    returncode=result.returncode,
+                    duration_seconds=duration
+                )
 
                 self.logger.log(
                     event_type=EventType.ERROR,
@@ -166,6 +267,17 @@ class Subagent:
                     "tokens_used": usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
                 }
 
+                # Log detailed execution
+                duration = (datetime.now() - start_time).total_seconds()
+                self._log_detailed_execution(
+                    instruction=instruction,
+                    raw_stdout=result.stdout,
+                    raw_stderr=result.stderr,
+                    result=success_response,
+                    returncode=result.returncode,
+                    duration_seconds=duration
+                )
+
                 self.logger.log(
                     event_type=EventType.COMPLETE,
                     actor=self.trace_id,
@@ -188,6 +300,17 @@ class Subagent:
                     "parse_error": str(e)
                 }
 
+                # Log detailed execution
+                duration = (datetime.now() - start_time).total_seconds()
+                self._log_detailed_execution(
+                    instruction=instruction,
+                    raw_stdout=result.stdout,
+                    raw_stderr=result.stderr,
+                    result=fallback_response,
+                    returncode=result.returncode,
+                    duration_seconds=duration
+                )
+
                 self.logger.log(
                     event_type=EventType.COMPLETE,
                     actor=self.trace_id,
@@ -200,11 +323,22 @@ class Subagent:
 
                 return fallback_response
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as timeout_exc:
             timeout_response = {
                 "status": "failed",
                 "error": "Subagent timed out after 10 minutes"
             }
+
+            # Log detailed execution for timeout
+            duration = (datetime.now() - start_time).total_seconds()
+            self._log_detailed_execution(
+                instruction=instruction,
+                raw_stdout=timeout_exc.stdout.decode() if timeout_exc.stdout else "",
+                raw_stderr=timeout_exc.stderr.decode() if timeout_exc.stderr else "",
+                result=timeout_response,
+                returncode=-1,
+                duration_seconds=duration
+            )
 
             self.logger.log(
                 event_type=EventType.ERROR,
@@ -223,6 +357,17 @@ class Subagent:
                 "status": "failed",
                 "error": str(e)
             }
+
+            # Log detailed execution for exceptions
+            duration = (datetime.now() - start_time).total_seconds()
+            self._log_detailed_execution(
+                instruction=instruction,
+                raw_stdout="",
+                raw_stderr=str(e),
+                result=exception_response,
+                returncode=-1,
+                duration_seconds=duration
+            )
 
             self.logger.log(
                 event_type=EventType.ERROR,
@@ -248,11 +393,19 @@ class Subagent:
 Please address this feedback and try again.
 """
 
+        # Generate directory tree for context
+        dir_tree = _generate_directory_tree(self.workspace)
+
         return f"""# Subagent Task {self.trace_id}
 
 ## Context
 {self.context}
 {retry_section}
+## Current Project Structure
+```
+{dir_tree}
+```
+
 ## Your Task
 {self.task_description}
 
@@ -275,10 +428,15 @@ When complete, your final message MUST include a markdown code block with JSON i
 
 ## Critical Rules
 1. **WORKING DIRECTORY**: You are running in: {self.workspace}
-2. **CREATE ALL FILES HERE**: All files must be created in the CURRENT working directory ({self.workspace})
+2. **FILE CREATION RULES - EXACT PATH REQUIRED**:
+   - Create files at the EXACT path specified in the task description
+   - Example: If task says "src/module/file.py", create EXACTLY that path, not "src/other_module/file.py"
+   - DO NOT put files in similar existing directories - create the exact directory structure specified
+   - Create all necessary parent directories first with mkdir -p
+   - Verify the full path matches the task specification before creating the file
    - DO NOT create files in any `.agentic` subdirectory
    - DO NOT use relative paths like `../.agentic/`
-   - Create files directly in the current directory or its subdirectories
+   - All paths are relative to the current working directory ({self.workspace})
 
 3. **MVP-FIRST INCREMENTAL DEVELOPMENT** - Build the simplest working version first:
    - Start with the absolute minimum needed to make something work

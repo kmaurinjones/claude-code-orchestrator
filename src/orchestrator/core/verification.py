@@ -1,9 +1,11 @@
 """Task verification system for proving completion."""
 
-import subprocess
+import os
 import re
+import shlex
+import subprocess
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from rich.console import Console
 
 from ..models import VerificationCheck, Task
@@ -12,8 +14,25 @@ console = Console()
 
 
 class Verifier:
-    def __init__(self, workspace: Path):
-        self.workspace = workspace
+    def __init__(
+        self,
+        workspace: Path,
+        *,
+        skip_integration_tests: bool = True,
+        pytest_addopts: Optional[str] = None
+    ):
+        # Ensure workspace is absolute
+        if isinstance(workspace, Path):
+            self.workspace = workspace.resolve()
+        else:
+            self.workspace = Path(workspace).resolve()
+
+        # Validate workspace is absolute (defensive check)
+        if not self.workspace.is_absolute():
+            raise ValueError(f"Verifier workspace must be absolute: {self.workspace}")
+
+        self.skip_integration_tests = skip_integration_tests
+        self.pytest_addopts = pytest_addopts.strip() if pytest_addopts else None
 
     def verify_task(self, task: Task) -> Tuple[bool, List[str]]:
         """
@@ -66,24 +85,70 @@ class Verifier:
 
     def _check_command_passes(self, check: VerificationCheck) -> Tuple[bool, str]:
         """Verify that a command exits with code 0."""
+        env = os.environ.copy()
+        command = check.target
+
+        # Allow env override to force integration tests to run
+        run_integration_override = env.get("ORCHESTRATOR_RUN_INTEGRATION_TESTS")
+        skip_integration = self.skip_integration_tests
+        if run_integration_override:
+            skip_integration = run_integration_override.strip().lower() not in {"1", "true", "yes", "on"}
+
+        if "pytest" in command:
+            try:
+                tokens = shlex.split(command)
+            except ValueError:
+                tokens = []
+
+            is_pytest_command = any(
+                token == "pytest"
+                or token.endswith("pytest")
+                or token.endswith("pytest.exe")
+                for token in tokens
+            )
+
+            if not tokens:
+                is_pytest_command = True  # Fallback for complex shell commands
+
+            if is_pytest_command:
+                marker_flag_present = any(
+                    token == "-m" or token.startswith("-m")
+                    for token in tokens
+                )
+
+                extras: List[str] = []
+
+                if self.pytest_addopts:
+                    extras.append(self.pytest_addopts)
+
+                if skip_integration and not marker_flag_present:
+                    extras.append('-m "not integration"')
+
+                if extras:
+                    existing = env.get("PYTEST_ADDOPTS", "").strip()
+                    combined_parts = [existing] if existing else []
+                    combined_parts.extend(extras)
+                    env["PYTEST_ADDOPTS"] = " ".join(combined_parts).strip()
+
         try:
             result = subprocess.run(
-                check.target,
+                command,
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=60,
-                cwd=str(self.workspace)
+                cwd=str(self.workspace),
+                env=env
             )
 
             if result.returncode == 0:
-                return (True, f"Command passed: {check.target}")
+                return (True, f"Command passed: {command}")
             else:
                 stderr = result.stderr[:200] if result.stderr else result.stdout[:200]
                 return (False, f"Command failed (exit {result.returncode}): {stderr}")
 
         except subprocess.TimeoutExpired:
-            return (False, f"Command timed out: {check.target}")
+            return (False, f"Command timed out: {command}")
 
         except Exception as e:
             return (False, f"Command error: {str(e)}")

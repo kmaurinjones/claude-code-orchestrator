@@ -211,7 +211,12 @@ Start the interview now.
             console.print(f"[dim]Config: {config_path}[/dim]")
         console.print(f"Min iterations: {min_steps}")
         console.print(f"Max iterations: {max_steps}")
-        console.print(f"Max parallel tasks: {max_parallel_tasks}\n")
+        console.print(f"Max parallel tasks: {max_parallel_tasks}")
+        console.print(f"Subagent max turns: {config.subagent_max_turns}")
+        console.print(f"Skip integration tests: {config.skip_integration_tests}")
+        if config.pytest_addopts:
+            console.print(f"Additional pytest opts: {config.pytest_addopts}")
+        console.print()
 
         console.print("[green]✓[/green] Workspace found")
         console.print("[green]✓[/green] GOALS.md found")
@@ -221,7 +226,10 @@ Start the interview now.
             workspace=args.workspace,
             min_steps=min_steps,
             max_steps=max_steps,
-            max_parallel_tasks=max_parallel_tasks
+            max_parallel_tasks=max_parallel_tasks,
+            subagent_max_turns=config.subagent_max_turns,
+            skip_integration_tests=config.skip_integration_tests,
+            pytest_addopts=config.pytest_addopts
         )
         result = orch.run()
 
