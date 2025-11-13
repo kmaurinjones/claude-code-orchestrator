@@ -150,4 +150,5 @@ cython_debug/
 
 # OS
 .DS_Store
-Thumbs.dbsessions/
+Thumbs.db
+sessions/

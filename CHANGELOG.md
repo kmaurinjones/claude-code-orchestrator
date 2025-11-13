@@ -5,7 +5,58 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.17] - 2025-10-28
+## [0.6.0] - 2025-11-13
+
+### Added
+- **User Feedback System**: Live feedback during execution via `.agentic/current/USER_NOTES.md` with section-based parsing and automatic archiving
+- **Automatic Documentation**: Maintains `docs/` directory with architecture, components, scripts, API, and troubleshooting documentation
+- **Automatic Changelog**: Semantic versioning with auto-increment based on change type (Added/Changed/Fixed/Removed/Attempted)
+- **Goal Evaluator System**: Data-driven goal completion with pluggable adapters (TestSuiteEvaluator, MetricThresholdEvaluator, APIContractEvaluator)
+- **Rich Validators**: Extended verification checks from 3 to 9 types (HTTP endpoints, metric thresholds, JSON schema, security scans, type checks, data quality)
+- **Parallel Task Execution**: Concurrent execution of independent tasks via `ParallelExecutor` with thread-safe state management
+- **Automated Replanning**: Failed tasks trigger `Replanner` agent that generates remediation tasks instead of blind retries
+- **Experiment History Integration**: Reviewer context includes recent experiment runs from `.agentic/history/experiments.jsonl`
+- **Domain-Specific Context**: Detects project type (DS/backend/frontend/tooling) and injects tailored guardrails into subagent prompts
+
+### Changed
+- **Goal Completion**: Now data-driven via evaluators instead of manual flag checking - goals must pass verification to be considered achieved
+- **Task Verification**: Tester delegates to rich validators for HTTP, metrics, schema, security, type-check, and data-quality checks
+- **Failure Handling**: Exhausted tasks spawn remediation tasks via replanner instead of marking failed and stopping
+- **Reviewer Prompts**: Include user feedback, experiment history, and domain-specific safety checks
+- **Run Loop**: Batches ready tasks and executes in parallel waves up to `max_parallel_tasks` limit
+
+### Fixed
+- **Goal Achievement**: Goals now properly flip to `achieved=True` when evaluators confirm completion criteria met
+- **Verification Gaps**: No longer limited to file_exists/command_passes/pattern_in_file - now supports comprehensive validation
+
+## [0.5.21] - 2025-10-28
+
+### Added
+- **Reviewer Retry Loop**: If the first review times out, the orchestrator automatically retries with a condensed prompt and higher turn budget before falling back to auto-pass logic
+- **CLI Version Flag**: `orchestrate --version` now prints the installed orchestrator version and exits immediately
+
+### Changed
+- **Reviewer Prompting**: Added explicit instructions to prioritise operator notes and respond with JSON-only output when running in condensed mode
+- **Task Agent Prompts**: Now reference the new script runner utility so long-running commands get logged and tracked consistently
+
+### Fixed
+- **Repeated Reviewer Timeouts**: Detection of timeout markers now drives automatic retries instead of leaving tasks stuck in NEEDS_FOLLOWUP
+
+## [0.5.19] - 2025-10-28
+
+### Added
+- **Operator Notes Integration**: `NOTES.md` is now auto-created and surfaced to every subagent and reviewer so human guidance is always front and centre
+- **Script Runner Tool**: `python -m orchestrator.tools.run_script` executes long jobs, captures logs, applies timeouts, and records runs in `.agentic/history/experiments.jsonl`
+- **Experiment Logger**: Lightweight experiment registry stores command metadata, metrics, and artifact paths for later comparison
+
+### Changed
+- **Task & Reviewer Context**: Prompts now include operator notes, script-runner usage guidance, and shorter context to keep agents focused
+- **Reviewer Instructions**: Every review highlights operator notes before delivering the PASS/FAIL summary and next steps
+
+### Fixed
+- **Escaped JSON Handling**: Reviewer parser now decodes JSON blocks containing escaped newlines/quotes so structured feedback is always captured
+
+## [0.5.18] - 2025-10-28
 
 ### Added
 - **Resilient Reviewer Parsing**: Reviewer output now tolerates missing JSON blocks by extracting fallback text and flagging max-turn situations with actionable guidance

@@ -53,11 +53,25 @@ class Goal(BaseModel):
 
 
 class VerificationCheck(BaseModel):
-    """A verification check to prove task completion."""
-    type: str  # "file_exists", "command_passes", "pattern_in_file"
-    target: str  # File path or command to run
-    expected: Optional[str] = None  # For pattern matching
+    """A verification check to prove task completion.
+
+    Supported types:
+    - file_exists: Check if file/directory exists
+    - command_passes: Run command, expect exit code 0
+    - pattern_in_file: Search for regex pattern in file
+    - http_endpoint: Check HTTP endpoint returns expected status
+    - metric_threshold: Check metric meets threshold (e.g., "accuracy >= 0.95")
+    - schema_valid: Validate JSON/YAML against schema
+    - security_scan: Run security linter (bandit, eslint, etc.)
+    - type_check: Run type checker (mypy, tsc, etc.)
+    - data_quality: Check dataset quality (nulls, duplicates, ranges)
+    """
+    type: str
+    target: str  # File path, URL, command, or metric name
+    expected: Optional[str] = None  # Expected value/pattern
     description: str  # Human-readable description of what's being checked
+    timeout: Optional[int] = None  # Timeout in seconds (for commands/HTTP)
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # Extra config per check type
 
 
 class Task(BaseModel):

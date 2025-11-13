@@ -1,6 +1,6 @@
 [project]
 name = "agentic-orchestrator"
-version = "0.5.17"
+version = "0.6.0"
 description = "Self-orchestrating agentic system using Claude Code CLI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,7 @@ packages = ["src/orchestrator"]
 [tool.uv.workspace]
 members = [
     "example-projects/stock-picker",
+    "example-projects/stock-price-tracker/backend",
 ]
 
 

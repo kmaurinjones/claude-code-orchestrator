@@ -12,7 +12,6 @@ import re
 from ..models import Task
 from .subagent import Subagent
 from .logger import EventLogger
-from .. import __version__
 
 
 @dataclass
@@ -24,7 +23,15 @@ class ReviewFeedback:
     suggestions: Optional[List[str]] = None
 
 
-def _build_reviewer_task_description(task: Task, test_feedback: List[Dict[str, Any]]) -> str:
+def _build_reviewer_task_description(
+    task: Task,
+    test_feedback: List[Dict[str, Any]],
+    notes_overview: str,
+    user_feedback: List[FeedbackEntry],
+    experiments_summary: str,
+    short_mode: bool = False,
+    retry_count: int = 0,
+) -> str:
     """Create reviewer instructions."""
     tests_section = "No automated tests were executed."
     if test_feedback:
@@ -44,13 +51,52 @@ def _build_reviewer_task_description(task: Task, test_feedback: List[Dict[str, A
             lines.append(f"- ... {len(failures) - 3} additional failures omitted")
         tests_section = "\n".join(lines)
 
-    return f"""You are the project reviewer. Reflect on the delivered work and provide actionable feedback.
+    urgency = (
+        "Respond with the JSON block only. No prose outside the JSON. Keep summary <= 120 characters."
+        if short_mode
+        else "Provide concise feedback and include the JSON block below."
+    )
+    retry_line = (
+        f"\n> Previous reviewer attempts timed out ({retry_count}). Prioritise delivering the JSON immediately."
+        if short_mode and retry_count
+        else ""
+    )
+
+    # Build user feedback section
+    user_feedback_section = "No user feedback provided."
+    if user_feedback:
+        task_specific = [f for f in user_feedback if f.task_id == task.id]
+        general = [f for f in user_feedback if f.is_general]
+
+        lines = []
+        if task_specific:
+            lines.append("**Task-specific feedback:**")
+            for entry in task_specific:
+                lines.append(f"- {entry.content}")
+        if general:
+            lines.append("**General guidance:**")
+            for entry in general:
+                lines.append(f"- {entry.content}")
+
+        if lines:
+            user_feedback_section = "\n".join(lines)
+
+    return f"""You are the project reviewer. Reflect on the delivered work and provide actionable feedback.{retry_line}
 
 ## Task Summary
 - ID: {task.id}
 - Title: {task.title}
 - Description: {task.description}
 - Attempts: {task.attempt_count}/{task.max_attempts}
+
+## Operator Notes (highest priority)
+{notes_overview or 'No operator notes.'}
+
+## Recent Experiments
+{experiments_summary or 'No experiments recorded.'}
+
+## User Feedback (CRITICAL - must address)
+{user_feedback_section}
 
 ## Acceptance Criteria
 {chr(10).join(f'- {check.description}' for check in task.acceptance_criteria[:4]) or '- None'}
@@ -73,6 +119,7 @@ Respond with a JSON object in a markdown code block using this shape:
   "suggestions": ["Optional bullet", "Additional notes"]
 }}
 ```
+{urgency}
 """
 
 
@@ -89,7 +136,8 @@ def _extract_json_block(raw_output: str) -> Optional[Dict[str, Any]]:
         if not snippet:
             continue
         try:
-            return json.loads(snippet)
+            decoded = bytes(snippet, "utf-8").decode("unicode_escape")
+            return json.loads(decoded)
         except json.JSONDecodeError:
             continue
     return None
@@ -110,9 +158,21 @@ class Reviewer:
         step: int,
         trace_id: str,
         parent_trace_id: str,
+        notes_summary: str,
+        user_feedback: Optional[List[FeedbackEntry]] = None,
+        short_mode: bool = False,
+        retry_count: int = 0,
     ) -> ReviewFeedback:
         """Invoke reviewer agent and parse response."""
-        task_description = _build_reviewer_task_description(task, test_feedback)
+        task_description = _build_reviewer_task_description(
+            task,
+            test_feedback,
+            notes_summary,
+            user_feedback or [],
+            self._get_experiment_history(),
+            short_mode=short_mode,
+            retry_count=retry_count,
+        )
 
         agent = Subagent(
             task_id=f"review-{task.id}",
@@ -122,7 +182,7 @@ class Reviewer:
             logger=self.logger,
             step=step,
             workspace=self.project_root,
-            max_turns=16,
+            max_turns=24 if short_mode else 18,
             model="haiku",
         )
 
@@ -161,3 +221,37 @@ class Reviewer:
             suggestions=suggestions if isinstance(suggestions, list) else None,
             raw_output=raw_output,
         )
+
+    def _get_experiment_history(self, limit: int = 5) -> str:
+        """Summarize recent experiment runs from the history directory."""
+        history_dir = self.project_root / ".agentic" / "history"
+        history_file = history_dir / "experiments.jsonl"
+
+        if not history_file.exists():
+            return "No experiments recorded."
+
+        lines = [line.strip() for line in history_file.read_text().splitlines() if line.strip()]
+        if not lines:
+            return "No experiments recorded."
+
+        entries = []
+        for line in reversed(lines):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            run_name = record.get("run_name", "unknown-run")
+            command = record.get("command", "")
+            return_code = record.get("return_code", "?")
+            metrics = record.get("metrics") or {}
+            metrics_summary = ", ".join(f"{k}={v}" for k, v in metrics.items()) if metrics else "no metrics"
+            entries.append(f"- {run_name} (exit {return_code}): {command} | {metrics_summary}")
+
+            if len(entries) >= limit:
+                break
+
+        if not entries:
+            return "No experiments recorded."
+
+        return "\n".join(reversed(entries))

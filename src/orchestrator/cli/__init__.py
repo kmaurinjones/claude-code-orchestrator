@@ -9,12 +9,14 @@ import argparse
 from ..core.orchestrator import Orchestrator
 from ..core.subagent import find_claude_executable
 from ..models import OrchestratorConfig
+from .. import __version__
 
 console = Console()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Agentic Orchestrator")
+    parser.add_argument("--version", action="store_true", help="Show orchestrator version and exit")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Interview command
@@ -30,6 +32,10 @@ def main():
     run_parser.add_argument("--max-parallel-tasks", type=int, default=None, help="Maximum number of tasks to run in parallel (overrides config)")
 
     args = parser.parse_args()
+
+    if getattr(args, "version", False):
+        console.print(__version__)
+        return
 
     if args.command == "interview":
         # Check Claude Code availability
