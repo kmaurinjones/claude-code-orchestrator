@@ -34,6 +34,17 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Name recorded in experiments.jsonl (default: script-run).",
     )
     parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Optional orchestrator task identifier for linkage.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["blocking", "enqueue"],
+        default="blocking",
+        help="Blocking runs command immediately; enqueue hands off to orchestrator for background execution.",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=None,
@@ -103,6 +114,34 @@ def run_command(
     return result.returncode
 
 
+def _enqueue_job(
+    args: argparse.Namespace,
+    workspace: Path,
+    log_path: Path,
+) -> int:
+    jobs_dir = (workspace / "history" / "jobs" / "queue").resolve()
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+
+    job_id = f"{datetime.now().strftime('%Y-%m-%d--%H-%M-%S')}_{args.run_name.replace(' ', '_')}"
+    job_path = jobs_dir / f"{job_id}.json"
+    payload = {
+        "job_id": job_id,
+        "run_name": args.run_name,
+        "command": args.cmd,
+        "workdir": str(Path(args.workdir).resolve()),
+        "timeout": args.timeout,
+        "metrics_file": args.metrics_file,
+        "log_file": str(log_path),
+        "notes": args.notes,
+        "task_id": args.task_id,
+        "mode": "enqueue",
+        "created_at": datetime.now().isoformat(),
+    }
+    job_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"Enqueued long-running job: {job_id}\nLog: {log_path}")
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     workspace = Path(".agentic")
@@ -110,6 +149,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     started = datetime.now()
     log_path = ensure_log_file(args.log_file, workspace, args.run_name)
+
+    if args.mode == "enqueue":
+        return _enqueue_job(args, workspace, log_path)
 
     try:
         return_code = run_command(args.cmd, Path(args.workdir), args.timeout, log_path)

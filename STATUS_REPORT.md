@@ -2,38 +2,30 @@
 
 ## Critical Enhancements Implemented ✅
 
-### 1. Parallel Execution Loop (COMPLETE)
-- `src/orchestrator/core/orchestrator.py` now uses `ParallelExecutor` to launch multiple ready tasks per iteration.
-- Task save operations and goal-step counters are guarded by locks to keep `TASKS.md` consistent during concurrent writes.
-- Ready-task batching honors `max_parallel_tasks` so larger projects can advance independent workstreams simultaneously.
+### 1. Parallel Execution Loop
+- `core/orchestrator.py` now batches ready tasks and runs them through `ParallelExecutor`, honoring `max_parallel_tasks` with thread-safe TASKS.md writes.
 
-### 2. Automated Replanning (COMPLETE)
-- New `src/orchestrator/core/replanner.py` agent inspects failed tasks, reviewer feedback, and test output, then emits remediation tasks.
-- Orchestrator calls the replanner when a task exhausts retries, adds generated work to the graph, and logs `REPLAN`/`REPLAN_REJECTED` events.
-- Replan depth is capped (default: 3) so failures cannot spiral into infinite loops.
+### 2. Automated Replanning
+- Failed tasks invoke `core/replanner.py`, which synthesizes remediation work, injects it into the task graph, and logs `REPLAN`/`REPLAN_REJECTED` events (depth-limited).
 
-### 3. Experiment Logger Integration (COMPLETE)
-- Task-agent prompts now require long-running commands (training, large test suites, migrations, builds) to run via `python -m orchestrator.tools.run_script`.
-- Reviewer context includes the latest entries from `.agentic/history/experiments.jsonl`, giving visibility into prior runs and metrics.
-- Subagents are reminded that run_script captures logs, metrics, and artifacts for reproducibility.
+### 3. Experiment Logger + Long-Running Job Queue
+- Subagents enqueue multi-hour commands via `python -m orchestrator.tools.run_script --mode enqueue --task-id <task>`.
+- `core/long_jobs.py` executes queued jobs outside Claude, streams logs to `.agentic/history/logs/`, blocks the originating task until completion, and appends experiment metadata.
+- Reviewer prompts surface the most recent experiment runs (metrics, commands, exit codes).
 
-### 4. Domain-Specific Context (COMPLETE)
-- `src/orchestrator/core/domain_context.py` detects whether a workspace looks like data science, backend, frontend, or tooling.
-- `_gather_context()` appends tailored guardrails (e.g., leakage/bias checklist for DS, latency/security reminders for backend).
-- Keeps every Claude task grounded in the domain’s success criteria without manual prompting.
+### 4. Domain-Aware Context
+- `core/domain_context.py` detects DS/backend/frontend/tooling signals and injects tailored guardrails (leakage checks, latency budgets, etc.) into every task prompt.
 
-## Current State Snapshot
-- Goal evaluator + rich validators: ✅ (previous session)
-- Parallel execution, replanning, experiment history, and domain context: ✅ (this session)
-- Docs updated (`README.md`, `IMPLEMENTATION_PLAN.md`, this file, `CLAUDE.md`) so the next contributor has accurate guidance.
+### 5. Critic Phase (Actor/Critic Loop)
+- `core/critic.py` enforces coding standards (snake_case file names, no spaces/tabs, optional Ruff lint checks).
+- Orchestrator logs critic findings per attempt and blocks completion until violations are resolved, giving each task a true actor/critic cadence.
 
 ## Verification Checklist
-1. **Parallelism:** configure `max_parallel_tasks=3`, create ≥3 independent backlog tasks, and observe overlapping `[PARALLEL]` logs.
-2. **Replanning:** craft a task guaranteed to fail (e.g., pytest failure) and confirm remediation tasks appear in `TASKS.md` plus REPLAN events in `.agentic/full_history.jsonl`.
-3. **Experiment Feed:** run any long command through `run_script`, drop a `metrics.json`, and verify reviewer context lists the run.
-4. **Domain Context:** add DS-esque files/goals; inspect subagent context for leakage/bias checklist. Repeat for backend (api directory) to see security/perf guidance.
+1. **Parallelism**: Configure `max_parallel_tasks=3`, create ≥3 independent backlog tasks, run orchestrator, and check `[PARALLEL]` logs show concurrent execution.
+2. **Long Jobs**: Within a task, run `python -m orchestrator.tools.run_script --cmd "python train.py" --run-name train --task-id task-001 --mode enqueue`. Confirm the orchestrator prints `[JOBS]` logs, waits for completion, and only then proceeds to tests/review.
+3. **Replanning**: Force a failing test; verify remediation tasks appear in `TASKS.md` and corresponding REPLAN events in `.agentic/full_history.jsonl`.
+4. **Reviewer Context**: Inspect reviewer logs to ensure experiment history and domain guardrails appear.
 
-## Remaining Follow-Ups
-- Broader end-to-end test run on a real workspace (requires Claude CLI and network access).
-- Performance tuning of REPLAN prompt once we collect real-world traces.
-- Optional: expose `max_replan_depth` + `max_parallel_tasks` in config UI.
+## Outstanding Work
+- Persist goal evaluator results (Phase 6 in `IMPLEMENTATION_PLAN.md`) back to GOALS.md so completion status survives restarts.
+- Full end-to-end test on a real project once Claude CLI access is available.

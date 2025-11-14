@@ -59,6 +59,8 @@ Recent additions:
 - Parallel task execution with `ParallelExecutor` and thread-safe TASKS.md writes
 - Automated replanning agent that converts failures into remediation tasks
 - Domain-aware context builder (DS/backend/frontend/tooling guardrails)
+- Long-running job queue: subagents enqueue heavy commands via `run_script --mode enqueue --task-id …`, the orchestrator executes them outside Claude, waits for completion, and logs results in `.agentic/history/`
+- Actor/Critic loop: after the actor subagent runs, a Critic enforces naming/trailing-whitespace rules and optional Ruff linting before a task can pass
 
 ## Usage Pattern
 

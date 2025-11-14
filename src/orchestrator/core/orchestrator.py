@@ -23,6 +23,8 @@ from .feedback import FeedbackTracker
 from .parallel_executor import ParallelExecutor, get_ready_tasks_batch
 from .replanner import Replanner
 from .domain_context import DomainContext, DomainDetector
+from .long_jobs import LongRunningJobManager
+from .critic import Critic, CriticFeedback
 
 console = Console()
 
@@ -80,6 +82,8 @@ class Orchestrator:
 
         self.parallel_executor = ParallelExecutor(max_parallel=self.max_parallel_tasks)
         self.replanner = Replanner(self.project_root, self.logger)
+        self.long_jobs = LongRunningJobManager(self.workspace, self.project_root)
+        self.critic = Critic(self.project_root)
 
         self._task_save_lock = threading.Lock()
         self._step_lock = threading.Lock()
@@ -115,6 +119,8 @@ class Orchestrator:
                 return "SUCCESS"
 
             self._latest_notes_summary = self.notes_manager.concise_summary()
+            self.long_jobs.process_queue()
+            self.long_jobs.poll()
 
             ready_tasks = get_ready_tasks_batch(
                 self.tasks,
@@ -157,6 +163,7 @@ class Orchestrator:
 
         base_replan_depth = self._task_replan_depth.get(task.id, 0)
         last_review_feedback: Optional[ReviewFeedback] = None
+        last_critic_feedback: Optional[CriticFeedback] = None
         last_test_results: List[TestResult] = []
 
         while task.attempt_count < task.max_attempts:
@@ -183,11 +190,17 @@ class Orchestrator:
                 self._handle_agent_failure(task, agent_result)
                 continue
 
+            self.long_jobs.wait_for_task_jobs(task.id)
+
             last_test_results = self._run_tests(task)
             last_review_feedback = self._run_reviewer(task, last_test_results, step=attempt_step)
-            self._record_feedback(task, last_test_results, last_review_feedback)
+            last_critic_feedback = self.critic.evaluate(task.id)
+            self._record_feedback(task, last_test_results, last_review_feedback, last_critic_feedback)
 
-            if self._task_succeeded(last_test_results, last_review_feedback):
+            if last_critic_feedback and last_critic_feedback.summary:
+                task.summary.append(last_critic_feedback.summary[:200])
+
+            if self._task_succeeded(last_test_results, last_review_feedback, last_critic_feedback):
                 task.status = TaskStatus.COMPLETE
                 task.summary.append(last_review_feedback.summary[:200])
                 task.next_action = None
@@ -200,7 +213,13 @@ class Orchestrator:
 
             task.summary.append(last_review_feedback.summary[:200])
             fallback_next = f"Review feedback: {last_review_feedback.summary}"[:200]
-            task.next_action = last_review_feedback.next_steps or fallback_next
+            if last_critic_feedback and last_critic_feedback.status != "PASS":
+                fallback_next = f"Critic feedback: {last_critic_feedback.summary}"[:200]
+            task.next_action = (
+                last_review_feedback.next_steps
+                or (last_critic_feedback.summary if last_critic_feedback.status != "PASS" else None)
+                or fallback_next
+            )
             console.print(f"[yellow]{_timestamp()} [REWORK][/yellow] {task.id} requires changes: {task.next_action}")
 
         fallback_review = last_review_feedback or ReviewFeedback(
@@ -209,15 +228,26 @@ class Orchestrator:
             next_steps="Retry with additional diagnostics.",
             raw_output="",
         )
+        fallback_critic = last_critic_feedback or CriticFeedback(
+            status="PASS",
+            summary="Critic not executed.",
+            findings=[],
+        )
 
         if task.status != TaskStatus.COMPLETE:
             task.status = TaskStatus.FAILED
             console.print(f"[red]{_timestamp()} [FAILED][/red] ✗ {task.id} exhausted attempts")
 
+            if last_critic_feedback and last_critic_feedback.status != "PASS":
+                fallback_review.summary += f" | Critic: {last_critic_feedback.summary}"
+
             self._handle_replan(task, fallback_review, last_test_results, base_replan_depth)
 
             # Document the failure
-            self._update_docs_and_changelog(task, fallback_review, success=False)
+            failure_review = fallback_review
+            if fallback_critic.status != "PASS":
+                failure_review.summary += f" | Critic: {fallback_critic.summary}"
+            self._update_docs_and_changelog(task, failure_review, success=False)
 
         self._save_tasks()
 
@@ -328,9 +358,15 @@ class Orchestrator:
     # Decision helpers                                                      #
     # --------------------------------------------------------------------- #
 
-    def _task_succeeded(self, tests: List[TestResult], feedback: ReviewFeedback) -> bool:
+    def _task_succeeded(
+        self,
+        tests: List[TestResult],
+        review: ReviewFeedback,
+        critic: Optional[CriticFeedback],
+    ) -> bool:
         tests_ok = all(res.passed for res in tests)
-        return feedback.status in {"PASS", "SUCCESS"} and tests_ok
+        critic_ok = critic is None or critic.status == "PASS"
+        return review.status in {"PASS", "SUCCESS"} and tests_ok and critic_ok
 
     def _handle_agent_failure(self, task: Task, agent_result: Dict[str, str]) -> None:
         summary = agent_result.get("error") or agent_result.get("output", "")[:200]
@@ -343,6 +379,7 @@ class Orchestrator:
         task: Task,
         tests: List[TestResult],
         review: ReviewFeedback,
+        critic: Optional[CriticFeedback] = None,
     ) -> None:
         entry = {
             "task_id": task.id,
@@ -358,11 +395,20 @@ class Orchestrator:
                 for res in tests
             ],
             "next_steps": review.next_steps or review.summary,
+            "critic": {
+                "status": critic.status,
+                "summary": critic.summary,
+                "findings": critic.findings,
+            }
+            if critic
+            else None,
         }
         self.feedback_log.append(entry)
         task.review_feedback.append(review.summary[:200])
         if review.suggestions:
             task.review_feedback.extend(review.suggestions)
+        if critic and critic.summary:
+            task.critic_feedback.append(critic.summary[:200])
 
     def _handle_replan(
         self,
@@ -537,11 +583,12 @@ class Orchestrator:
 - Always review the Operator Notes section for priority guidance before acting.
 - **Commands expected to run >2 minutes _must_ use the experiment runner**:
   ```
-  python -m orchestrator.tools.run_script --cmd "pytest -m slow" --run-name "slow-suite"
+  python -m orchestrator.tools.run_script --cmd "pytest -m slow" --run-name "slow-suite" --task-id "{task.id}" --mode enqueue
   ```
-  This captures logs in `.agentic/history/logs/` and appends metrics/artifacts to `.agentic/history/experiments.jsonl`.
-- Always route model training, large test suites, migrations, builds, and heavy data processing through `run_script`
-  so we get resumable logs, timeout protection, and metric tracking.
+  This hands the job off to the orchestrator so Claude is free to continue; the orchestrator waits for completion,
+  captures logs in `.agentic/history/logs/`, and appends metrics/artifacts to `.agentic/history/experiments.jsonl`.
+- Blocking commands can still use `--mode blocking` when they finish quickly. The enqueue mode is preferred for
+  model training, full test suites, migrations, builds, and heavy data processing.
 
 Respond with the mandatory JSON block when finished."""
 

@@ -5,6 +5,31 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2025-11-13
+
+### Added
+- **Long-Running Job Queue**: Subagents can enqueue multi-hour commands via `run_script --mode enqueue --task-id <task>`
+  - New `LongRunningJobManager` executes queued jobs outside Claude to free up subagent capacity
+  - Jobs stream logs to `.agentic/history/logs/` and append experiment metadata to `experiments.jsonl`
+  - Orchestrator blocks task review until all task-linked jobs complete
+  - Queue management: `process_queue()`, `poll()`, `wait_for_task_jobs(task_id)` APIs
+- **Actor/Critic Loop**: Task completion now requires passing both functional review AND coding standards check
+  - New `Critic` enforces snake_case file names, no trailing whitespace, and optional Ruff lint checks
+  - Critic findings logged per attempt; tasks blocked until violations resolved
+  - Integrates into orchestrator workflow: actor runs task → critic evaluates → review only if critic passes
+  - Critic feedback surfaces in task summaries and next-action guidance
+
+### Changed
+- **Task Model**: Added `critic_feedback` field to track coding standards violations across attempts
+- **run_script Tool**: Added `--task-id` and `--mode` (blocking/enqueue) parameters for job queue integration
+- **Orchestrator Run Loop**: Now polls job queue and waits for task jobs before running tests/review
+- **Reviewer Prompt**: Updated to reflect enqueue workflow (`--mode enqueue`) for commands >2 minutes
+- **Task Success Criteria**: Three-way check now required: tests pass AND review passes AND critic passes
+
+### Fixed
+- Long commands no longer block Claude CLI during execution - handed off to orchestrator job queue
+- Coding standard violations now caught before task completion instead of polluting codebase
+
 ## [0.6.0] - 2025-11-13
 
 ### Added

@@ -4,11 +4,11 @@
 - **Phase 1 – Goal Evaluator & Validators:** ✅
 - **Phase 2 – Parallel Task Execution:** ✅
 - **Phase 3 – Replan / Adaptive Tasks:** ✅
-- **Phase 4 – Experiment Logger Integration:** ✅
+- **Phase 4 – Experiment Logger Integration & Job Queue:** ✅
 - **Phase 5 – Domain Context & Safety Prompts:** ✅
 - **Phase 6 – Goal Evaluator Persistence:** ⏳ (next milestone)
 
-The core architectural upgrades required for autonomous delivery (parallelism, replanning, experiment tracking, domain awareness) are now implemented. Remaining work focuses on persisting evaluator results back to GOALS.md and broader QA.
+The core architectural upgrades required for autonomous delivery (parallelism, replanning, experiment tracking, domain awareness) are implemented. Remaining work focuses on persisting evaluator results back to GOALS.md and broader QA.
 
 ---
 
@@ -26,13 +26,13 @@ The core architectural upgrades required for autonomous delivery (parallelism, r
 - Files: `core/replanner.py`, `core/orchestrator.py`, `models.py`.
 - Result: Failed tasks trigger a Replanner agent that proposes 1–3 remediation tasks. New work is added to the task graph, REPLAN/REPLAN_REJECTED events are logged, and depth limits prevent infinite loops.
 
-### Phase 4: Experiment Logger Integration ✅
-- Files: `core/orchestrator.py`, `core/reviewer.py`.
-- Result: Subagents must route long commands through `python -m orchestrator.tools.run_script`, guaranteeing logs/metrics under `.agentic/history/`. Reviewer context now lists recent experiment runs from `experiments.jsonl`.
+### Phase 4: Experiment Logger Integration & Job Queue ✅
+- Files: `core/orchestrator.py`, `core/reviewer.py`, `core/long_jobs.py`, `tools/run_script.py`.
+- Result: Long-running commands are enqueued via `run_script --mode enqueue --task-id ...`. The orchestrator executes them outside Claude, waits for completion, captures logs/metrics under `.agentic/history/`, and reviewer context lists recent experiment runs.
 
 ### Phase 5: Domain-Specific Context ✅
 - Files: `core/domain_context.py`, `core/orchestrator.py`.
-- Result: The orchestrator detects whether the workspace is DS/backend/frontend/tooling and injects tailored guardrails (e.g., leakage/bias checklists, latency/security budgets) into every task prompt.
+- Result: The orchestrator detects whether the workspace is DS/backend/frontend/tooling and injects tailored guardrails into every task prompt.
 
 ---
 
@@ -62,4 +62,4 @@ The core architectural upgrades required for autonomous delivery (parallelism, r
 - Run orchestrator against a real multi-goal workspace to baseline throughput improvements from parallelism.
 - Capture telemetry on REPLAN frequency to tune prompts (e.g., if too many redundant tasks appear).
 - Surface experiment summaries in CLI output (not just reviewer context) for faster human auditing.
-- Optional: expose `max_parallel_tasks`, `max_replan_depth`, and domain detection overrides in `orchestrator.config.yaml`.
+- Optional: expose `max_parallel_tasks`, `max_replan_depth`, job-polling intervals, and domain detection overrides in `orchestrator.config.yaml`.

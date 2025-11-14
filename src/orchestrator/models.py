@@ -91,6 +91,7 @@ class Task(BaseModel):
     acceptance_criteria: List[VerificationCheck] = Field(default_factory=list)
     test_history: List[str] = Field(default_factory=list)
     review_feedback: List[str] = Field(default_factory=list)
+    critic_feedback: List[str] = Field(default_factory=list)
 
 
 class LogEvent(BaseModel):
