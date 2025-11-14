@@ -151,4 +151,3 @@ cython_debug/
 # OS
 .DS_Store
 Thumbs.db
-sessions/

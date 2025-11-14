@@ -5,6 +5,39 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2025-11-13
+
+### Added
+- **Completion Summary System**: Orchestrator generates domain-specific usage guide when run completes
+  - Spawns Sonnet subagent to analyze completed work and generate contextual instructions
+  - Shows quick start commands, key CLI commands, configuration locations, and next steps
+  - Domain-aware: DS projects get training/metrics guidance, backend gets server/API docs, frontend gets dev/build commands
+  - Displays formatted summary with goals achievement, task statistics, and log file locations
+- **Auto-Completion Check**: Tasks with pre-satisfied acceptance criteria + critic standards auto-complete without actor phase
+  - Pre-checks acceptance criteria before spawning subagent
+  - Runs critic evaluation on existing code
+  - Saves Claude calls when work already meets requirements
+- **Production-Readiness Critic**: Comprehensive quality validation as final gate before task completion
+  - Module docstrings required for all Python files
+  - No bare except clauses - must specify exception types
+  - No TODO/FIXME/HACK comments - technical debt must be resolved
+  - No debug print() statements - must use proper logging
+  - No hardcoded credentials - passwords/API keys/secrets must be externalized
+  - Function docstrings required for public functions
+  - Markdown docs must have headers and valid internal links
+  - Config files checked for credentials
+  - Ruff linting must pass (non-negotiable)
+
+### Changed
+- **User Feedback Template**: Simplified instructions - removed prescriptive formatting, now freeform
+- **Changelog Entries**: No longer append task IDs like "(task-008)" to keep entries meaningful long-term
+- **Critic Philosophy**: Reframed as production-readiness gate with strict but fair standards
+- **Orchestrator Completion Flow**: Now generates usage summary before returning completion status
+
+### Removed
+- Obsolete test files and documentation (HANDOFF.md, IMPLEMENTATION_PLAN.md, STATUS_REPORT.md, TEST_README.md)
+- Old test workspace directory (test-orchestrator-v0.5.0/)
+
 ## [0.6.1] - 2025-11-13
 
 ### Added

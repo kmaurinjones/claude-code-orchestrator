@@ -25,6 +25,7 @@ from .replanner import Replanner
 from .domain_context import DomainContext, DomainDetector
 from .long_jobs import LongRunningJobManager
 from .critic import Critic, CriticFeedback
+from .completion_summary import CompletionSummary
 
 console = Console()
 
@@ -84,6 +85,7 @@ class Orchestrator:
         self.replanner = Replanner(self.project_root, self.logger)
         self.long_jobs = LongRunningJobManager(self.workspace, self.project_root)
         self.critic = Critic(self.project_root)
+        self.completion_summary = CompletionSummary(self.project_root, self.workspace)
 
         self._task_save_lock = threading.Lock()
         self._step_lock = threading.Lock()
@@ -111,12 +113,15 @@ class Orchestrator:
 
         self._log_checkpoint("start", {"max_steps": self.max_steps})
 
+        completion_reason = None
+
         while self.current_step < self.max_steps:
             console.print(f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] Step {self.current_step}/{self.max_steps}")
 
             if self.current_step >= self.min_steps and self._check_completion():
                 console.print(f"[green]{_timestamp()} [ORCHESTRATOR][/green] All core goals achieved")
-                return "SUCCESS"
+                completion_reason = "SUCCESS"
+                break
 
             self._latest_notes_summary = self.notes_manager.concise_summary()
             self.long_jobs.process_queue()
@@ -130,7 +135,8 @@ class Orchestrator:
 
             if not ready_tasks:
                 console.print(f"[yellow]{_timestamp()} [ORCHESTRATOR][/yellow] No ready tasks remaining")
-                return "NO_TASKS_AVAILABLE"
+                completion_reason = "NO_TASKS_AVAILABLE"
+                break
 
             for task in ready_tasks:
                 self._active_tasks.add(task.id)
@@ -143,8 +149,19 @@ class Orchestrator:
             finished_ids = set(result["tasks"]["completed"]) | set(result["tasks"]["failed"])
             self._active_tasks.difference_update(finished_ids)
 
-        console.print(f"[yellow]{_timestamp()} [ORCHESTRATOR][/yellow] Reached max iterations ({self.max_steps})")
-        return "MAX_ITERATIONS_REACHED"
+        if completion_reason is None:
+            console.print(f"[yellow]{_timestamp()} [ORCHESTRATOR][/yellow] Reached max iterations ({self.max_steps})")
+            completion_reason = "MAX_ITERATIONS_REACHED"
+
+        # Generate and display completion summary
+        self.completion_summary.generate_and_display(
+            goals=list(self.goals.core_goals),
+            tasks=self.tasks,
+            completion_reason=completion_reason,
+            step_count=self.current_step,
+        )
+
+        return completion_reason
 
     # --------------------------------------------------------------------- #
     # Core loop helpers                                                     #
@@ -160,6 +177,9 @@ class Orchestrator:
     def _process_task(self, task: Task) -> None:
         console.print(f"[cyan]{_timestamp()} [ORCHESTRATOR][/cyan] Selected task: {task.id} ({task.title})")
         task.status = TaskStatus.IN_PROGRESS
+
+        if self._attempt_auto_completion(task):
+            return
 
         base_replan_depth = self._task_replan_depth.get(task.id, 0)
         last_review_feedback: Optional[ReviewFeedback] = None
@@ -373,6 +393,53 @@ class Orchestrator:
         task.summary.append(f"Attempt {task.attempt_count}: Subagent failure")
         task.next_action = f"Previous attempt failed: {summary}"
         console.print(f"[yellow]{_timestamp()} [TASK][/yellow] {task.id} agent failed, retrying")
+
+    def _attempt_auto_completion(self, task: Task) -> bool:
+        """Mark task complete immediately if acceptance criteria already pass."""
+        if not task.acceptance_criteria:
+            return False
+
+        console.print(
+            f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] "
+            f"Pre-checking acceptance criteria for {task.id}"
+        )
+        test_results = self.tester.run(task)
+        if not all(result.passed for result in test_results):
+            console.print(
+                f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] "
+                f"{task.id} requires implementation; acceptance criteria not yet satisfied"
+            )
+            return False
+
+        critic_feedback = self.critic.evaluate(task.id)
+        if critic_feedback.status != "PASS":
+            console.print(
+                f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] "
+                f"{task.id} critic check failed; actor phase required"
+            )
+            return False
+
+        synthetic_review = ReviewFeedback(
+            status="PASS",
+            summary="Auto-accepted: all acceptance criteria already satisfied.",
+            next_steps=None,
+            raw_output="AUTO_ACCEPT",
+            suggestions=None,
+        )
+
+        task.status = TaskStatus.COMPLETE
+        task.summary.append(synthetic_review.summary)
+        task.next_action = None
+
+        self._record_feedback(task, test_results, synthetic_review, critic_feedback)
+        self._update_docs_and_changelog(task, synthetic_review, success=True)
+        self._save_tasks()
+
+        console.print(
+            f"[green]{_timestamp()} [SUCCESS][/green] "
+            f"✓ {task.id} auto-completed (requirements already met)"
+        )
+        return True
 
     def _record_feedback(
         self,

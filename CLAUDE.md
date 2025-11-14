@@ -60,7 +60,8 @@ Recent additions:
 - Automated replanning agent that converts failures into remediation tasks
 - Domain-aware context builder (DS/backend/frontend/tooling guardrails)
 - Long-running job queue: subagents enqueue heavy commands via `run_script --mode enqueue --task-id …`, the orchestrator executes them outside Claude, waits for completion, and logs results in `.agentic/history/`
-- Actor/Critic loop: after the actor subagent runs, a Critic enforces naming/trailing-whitespace rules and optional Ruff linting before a task can pass
+- Actor/Critic loop: after the actor subagent runs, a strict Critic enforces production-readiness standards (naming, whitespace, docstrings, no bare excepts, no TODOs, no debug prints, no hardcoded secrets, no broken links, Ruff linting) acting as the final quality gate before completion
+- Completion summary: when orchestrator finishes (success/max steps/no tasks), generates domain-specific usage guide with CLI commands, configuration, and next steps
 
 ## Usage Pattern
 

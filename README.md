@@ -140,6 +140,12 @@ NetworkX-based dependency tracking:
 - The orchestrator monitors `.agentic/history/jobs/` to start queued commands, stream logs, and block the originating task until they finish
 - Critical for multi-hour training runs, migrations, or large builds that would exceed Claude’s time limits
 
+### Auto-Completion of Existing Work
+
+- Before invoking the actor subagent, the orchestrator runs each task’s acceptance criteria and critic checks
+- If everything already passes (common in established codebases), the task is auto-accepted without rewriting files
+- This lets you resume from partially completed projects or imported repositories without redoing their foundational setup
+
 ### Replanner & Experiment History
 
 - When a task exhausts retries, the Replanner agent analyzes reviewer/test feedback and spawns remediation tasks automatically

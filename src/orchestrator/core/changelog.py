@@ -101,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             change_type: Type of change (Added, Changed, etc.)
             description: Description of the change
             bump_type: How to bump version (if None, uses smart default)
-            task_id: Optional task ID reference
+            task_id: Optional task ID reference (not used in output, kept for API compatibility)
 
         Returns:
             New version string
@@ -118,10 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         new_version = f"{major}.{minor}.{patch}"
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # Format description with task reference
+        # Use description as-is without task_id suffix
         formatted_desc = description
-        if task_id:
-            formatted_desc = f"{description} ({task_id})"
 
         # Read current changelog
         content = self.changelog_file.read_text()
@@ -174,16 +172,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         """
         Add entry to most recent version without bumping version.
         Useful for accumulating changes before releasing.
+
+        Args:
+            task_id: Optional task ID reference (not used in output, kept for API compatibility)
         """
         if not self.changelog_file.exists():
             self.initialize()
 
         content = self.changelog_file.read_text()
 
-        # Format description
+        # Use description as-is without task_id suffix
         formatted_desc = description
-        if task_id:
-            formatted_desc = f"{description} ({task_id})"
 
         # Find the most recent version section
         version_pattern = r'(## \[\d+\.\d+\.\d+\][^\n]*\n)'

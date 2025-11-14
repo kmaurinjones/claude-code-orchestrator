@@ -42,10 +42,8 @@ class FeedbackTracker:
 This file allows you to provide feedback to the orchestrator during execution.
 
 **How to use:**
-1. Write notes in the "New Notes" section below
-2. Use format: `- [task-id] Your feedback` for task-specific notes
-3. Use format: `- [general] Your feedback` for general guidance
-4. The orchestrator will automatically move reviewed notes to "Previously Reviewed"
+1. Write notes in the "New Notes" section below in whatever format is ideal for you to provide feedback.
+2. The orchestrator will automatically move reviewed notes to "Previously Reviewed"
 
 ---
 
