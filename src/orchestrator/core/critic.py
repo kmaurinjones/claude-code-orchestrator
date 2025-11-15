@@ -43,10 +43,11 @@ class Critic:
     output that won't cause problems downstream.
     """
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, workspace: Path):
         self.project_root = Path(project_root).resolve()
+        self.workspace = Path(workspace).resolve()
 
-    def evaluate(self, task_id: str) -> CriticFeedback:
+    def evaluate(self, task_id: str, domain: Optional[str] = None) -> CriticFeedback:
         """
         Perform comprehensive quality evaluation.
 
@@ -69,6 +70,8 @@ class Critic:
         if lint_result:
             findings.append(lint_result)
 
+        findings.extend(self._domain_specific_findings(domain))
+
         if findings:
             summary = (
                 f"BLOCKED: {len(findings)} production-readiness issue(s) detected. "
@@ -80,6 +83,20 @@ class Critic:
         summary = f"Production-ready: All quality standards met for {task_id}."
         console.print(f"[green]Critic[/green] {summary}")
         return CriticFeedback(status="PASS", summary=summary, findings=[])
+
+    def _domain_specific_findings(self, domain: Optional[str]) -> List[str]:
+        if not domain:
+            return []
+        findings: List[str] = []
+        normalized = domain.lower()
+        if normalized == "data_science":
+            experiments_file = self.workspace / "history" / "experiments.jsonl"
+            if not experiments_file.exists() or not experiments_file.read_text(encoding="utf-8").strip():
+                findings.append(
+                    "No recorded experiments in .agentic/history/experiments.jsonl. "
+                    "Run `orchestrate experiment` or log calibration runs before finalizing."
+                )
+        return findings
 
     def _collect_changed_files(self) -> List[str]:
         try:

@@ -57,6 +57,9 @@ orchestrator/
 ## Installation
 
 ```bash
+# From the orchestrator repo root
+cd /path/to/orchestrator
+
 # Install dependencies
 uv sync
 
@@ -69,13 +72,21 @@ claude --version
 ### Run Interview (Interactive Goal Setting)
 
 ```bash
+# From your project directory
+cd /path/to/your/project
 orchestrate interview --workspace .agentic
+# If GOALS/TASKS already exist, the interview automatically continues that plan.
+# Use --fresh to force a brand new set of files: orchestrate interview --workspace .agentic --fresh
 ```
 
 ### Run Orchestrator
 
 ```bash
+# From the same project directory
+cd /path/to/your/project
 orchestrate run --workspace .agentic --max-iterations 100
+# Surgical mode keeps diffs tight and limited to specific files
+# orchestrate run --workspace .agentic --surgical --surgical-path src/training/config.py
 ```
 
 ### Test with Simple Example
@@ -204,9 +215,9 @@ The orchestrator supports live feedback during execution through `USER_NOTES.md`
 
 **How it works:**
 1. When orchestrator starts, it creates `.agentic/current/USER_NOTES.md`
-2. Edit this file anytime during execution to provide feedback
-3. Before each review, orchestrator checks for new notes
-4. Consumed feedback is automatically moved to "Previously Reviewed" section
+2. Edit this file anytime during execution to provide feedback (add under the **New Notes** section)
+3. The orchestrator ingests new notes at the beginning of every iteration and before each review
+4. Consumed feedback is automatically moved to the **Previously Reviewed** section with timestamps
 
 **Feedback format:**
 - `- [task-001] Your task-specific feedback` - applies to specific task
@@ -301,3 +312,14 @@ uv run ruff format src/
 ## License
 
 MIT
+### Schedule a Long-Running Experiment
+
+```bash
+# Enqueue a training job and capture logs/metrics under .agentic/history/
+cd /path/to/your/project
+orchestrate experiment --cmd "uv run training/xgboost_tri_clf/src/train.py --n_rows 100000" \
+    --run-name "tri-clf-calibration" --notes "30min cadence calibration sweep"
+```
+
+This uses the same job queue the orchestrator watches, so experiments run safely in the
+background while the main workflow continues.

@@ -1,0 +1,1 @@
+CRITICAL: ALWAYS rebuild the tool from source after every change and ensure `orchestrate --version` shows the correct (updated) version.

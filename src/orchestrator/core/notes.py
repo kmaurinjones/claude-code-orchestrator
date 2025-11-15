@@ -1,19 +1,18 @@
-"""Utilities for loading user-provided NOTES.md guidance."""
+"""Utilities for loading user-provided USER_NOTES.md guidance."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 
+from .feedback import FeedbackTracker
 
-NOTES_FILE_NAME = "NOTES.md"
+
+NOTES_FILE_NAME = "USER_NOTES.md"
+LEGACY_NOTES_FILE = "NOTES.md"
 HEADER = "# User Notes\n"
-DEFAULT_BODY = (
-    "This file is for the human operator to jot down guidance for the orchestrator.\n"
-    "- Add high-priority instructions here while the system is running.\n"
-    "- The orchestrator will surface these notes to every subagent and reviewer.\n"
-)
 
 
 @dataclass
@@ -26,7 +25,7 @@ class NotesSnapshot:
 
 
 class NotesManager:
-    """Handles persistence and summarisation of NOTES.md."""
+    """Handles persistence and summarisation of USER_NOTES.md."""
 
     def __init__(self, workspace: Path):
         self.workspace = Path(workspace)
@@ -35,15 +34,47 @@ class NotesManager:
         self._ensure_exists()
 
     def _ensure_exists(self) -> None:
-        if not self.notes_path.exists():
-            self.notes_path.write_text(f"{HEADER}\n{DEFAULT_BODY}\n", encoding="utf-8")
+        legacy_path = self.notes_path.parent / LEGACY_NOTES_FILE
+        if self.notes_path.exists():
+            return
+
+        if legacy_path.exists():
+            legacy_path.rename(self.notes_path)
+            return
+
+        self.notes_path.write_text(self._build_template(), encoding="utf-8")
+
+    def _build_template(self) -> str:
+        return f"""{HEADER}
+
+Provide urgent instructions for the orchestrator. Use the format:
+- `[task-007] Please redo sentiment plot colors`
+- `[general] Pause new work until I inspect data`
+
+New notes go in the section below. The orchestrator automatically moves consumed notes
+into the "Previously Reviewed" section with a timestamp.
+
+---
+
+{FeedbackTracker.NEW_NOTES_HEADER}
+
+- [general] Example note here
+
+---
+
+{FeedbackTracker.REVIEWED_HEADER}
+<!-- Reviewed at {datetime.utcnow().isoformat()} -->
+- None yet
+"""
 
     def load(self) -> NotesSnapshot:
+        self._ensure_exists()
         content = self.notes_path.read_text(encoding="utf-8")
+        new_notes = self._extract_new_notes_section(content)
         bullet_points = [
             line.strip("- ").strip()
-            for line in content.splitlines()
-            if line.strip().startswith("-")
+            for line in new_notes.splitlines()
+            if line.strip().startswith(("-", "*"))
         ]
         return NotesSnapshot(
             path=self.notes_path,
@@ -62,3 +93,17 @@ class NotesManager:
         if remainder > 0:
             summary_lines.append(f"- … {remainder} additional note(s) omitted")
         return "\n".join(summary_lines)
+
+    def _extract_new_notes_section(self, content: str) -> str:
+        """Extract only the editable 'New Notes' block for summaries."""
+        start = content.find(FeedbackTracker.NEW_NOTES_HEADER)
+        end = content.find(FeedbackTracker.REVIEWED_HEADER)
+
+        if start == -1:
+            return content
+
+        start += len(FeedbackTracker.NEW_NOTES_HEADER)
+        if end == -1:
+            return content[start:]
+
+        return content[start:end].strip()

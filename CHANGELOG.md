@@ -5,6 +5,77 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.8] - 2025-11-15
+
+### Added
+- **History Recording System**: New `HistoryRecorder` persists summarized task events to `.agentic/history/tasks.jsonl`
+  - Records task status, attempts, review/critic summaries, and test results
+  - Separate from full event log - focuses on task-level outcomes
+  - Enables historical analysis and pattern detection across runs
+- **User Feedback TTL System**: Active feedback now has time-to-live of 5 steps
+  - Prevents stale feedback from affecting unrelated tasks
+  - Feedback automatically pruned after 5 steps of inactivity
+  - New `_active_user_feedback` tracks (entry, step) tuples
+- **Surgical Mode**: New CLI flag `--surgical` for focused, minimal-edit runs
+  - `--surgical-path` flag accepts multiple paths to constrain scope
+  - Tight scope enforcement prevents scope creep
+  - Ideal for targeted bug fixes and small enhancements
+- **Experiment Scheduler**: New `orchestrate experiment` command for long-running jobs
+  - Schedule commands directly without starting orchestrator run
+  - Supports timeout, workdir, run-name, notes, task-id, metrics-file parameters
+  - Jobs tracked in experiment history for analysis
+- **Interview Fresh Mode**: New `--fresh` flag ignores existing GOALS/TASKS
+  - Allows clean restart even when previous plan exists
+  - Complements existing `--update` mode for incremental changes
+- **Enhanced Completion Summary**: Domain-aware usage guide generation improved
+  - Reports completion reason (SUCCESS/MAX_STEPS/NO_TASKS)
+  - Shows incomplete goals and task statistics
+  - Warns when project not production-ready (goals incomplete/tasks failed)
+  - Better fallback instructions when subagent times out
+- **Reviewer Auto-Accept Enhancement**: Smarter timeout handling
+  - Extracted `_handle_reviewer_timeout_auto_pass()` method for reusability
+  - Auto-accepts both pre-review and post-review timeouts when tests pass
+  - Reduces false failures from reviewer capacity issues
+
+### Changed
+- **User Feedback Architecture**: Replaced immediate consumption with TTL-based lifecycle
+  - Feedback persists across multiple tasks (up to 5 steps)
+  - General feedback applies to all tasks until TTL expires
+  - Task-specific feedback applies only to matching task ID
+  - New `_prune_user_feedback()` and `_ingest_user_feedback()` methods
+- **Critic Integration**: Now receives domain context for smarter standards enforcement
+  - Domain-specific rules (DS projects allow notebooks, backend enforces API standards)
+  - Updated `Critic.__init__()` signature requires workspace parameter
+- **Reviewer Integration**: Log workspace now required parameter
+  - Enables reviewer to write analysis artifacts to `.agentic/` directory
+  - Supports future reviewer self-improvement features
+- **Replanner Integration**: Log workspace now required parameter
+  - Consistent with reviewer changes
+  - Enables richer diagnostic output
+- **Interview Update Flow**: Auto-detects existing GOALS/TASKS
+  - If files exist and `--fresh` not specified, defaults to update mode
+  - Clearer user instructions to "continue the plan" vs restart
+  - Reduces accidental plan overwriting
+- **Subagent Execution**: `log_workspace` parameter now standard
+  - All subagents log to `.agentic/logs/subagents/` directory
+  - Consistent workspace handling across orchestrator
+- **Task Recording**: Now captures full history snapshot on completion/failure
+  - `_log_task_history_event()` called after every task outcome
+  - Provides audit trail independent of verbose event log
+- **ExperimentManager**: New module in `core/experiments.py`
+  - Replaces inline experiment logic
+  - Supports standalone `orchestrate experiment` command
+
+### Fixed
+- **Reviewer Timeout Auto-Pass**: Now checks before retry logic
+  - Prevents unnecessary retries when tests already prove success
+  - Applies to both initial review and retry review
+  - More reliable completion when reviewer capacity exhausted
+- **Domain Detection**: Moved from per-task to orchestrator initialization
+  - `self.project_domain` computed once at startup
+  - Eliminates redundant filesystem scans on every task
+  - Domain context now consistent across entire run
+
 ## [0.6.2] - 2025-11-13
 
 ### Added

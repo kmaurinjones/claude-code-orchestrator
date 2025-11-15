@@ -42,19 +42,22 @@ class FeedbackTracker:
 This file allows you to provide feedback to the orchestrator during execution.
 
 **How to use:**
-1. Write notes in the "New Notes" section below in whatever format is ideal for you to provide feedback.
-2. The orchestrator will automatically move reviewed notes to "Previously Reviewed"
+1. Add new notes under "New Notes" using `- [task-007] do X` or `- [general] pause work`.
+2. The orchestrator ingests the New Notes section at the start of every task attempt.
+3. Reviewed notes are automatically moved to "Previously Reviewed" with a timestamp.
 
 ---
 
 {self.NEW_NOTES_HEADER}
 
+- [general] Example note
 
 
 ---
 
 {self.REVIEWED_HEADER}
 
+- None yet
 """
         self.notes_file.write_text(template)
 

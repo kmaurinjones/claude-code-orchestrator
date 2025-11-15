@@ -94,7 +94,8 @@ class Subagent:
         max_turns: int = 10,
         claude_executable: Optional[str] = None,
         next_action: Optional[str] = None,
-        model: str = "haiku"  # Default to Haiku for cost efficiency
+        model: str = "haiku",
+        log_workspace: Optional[Path] = None,
     ):
         self.task_id = task_id
         self.task_description = task_description
@@ -108,6 +109,7 @@ class Subagent:
         self.claude_executable = claude_executable or find_claude_executable()
         self.next_action = next_action
         self.model = model
+        self.log_workspace = Path(log_workspace).resolve() if log_workspace else Path(workspace).resolve()
 
     def _log_detailed_execution(
         self,
@@ -119,8 +121,7 @@ class Subagent:
         duration_seconds: float
     ) -> None:
         """Log detailed subagent execution for debugging."""
-        # Create logs directory in .agentic
-        log_dir = self.workspace / "logs" / "subagents"
+        log_dir = self.log_workspace / "logs" / "subagents"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         log_file = log_dir / f"{self.trace_id}.json"

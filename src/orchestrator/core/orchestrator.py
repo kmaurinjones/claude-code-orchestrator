@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 from datetime import datetime
 import threading
@@ -19,12 +19,13 @@ from .subagent import Subagent
 from .tester import Tester, TestResult
 from .reviewer import Reviewer, ReviewFeedback
 from .notes import NotesManager
-from .feedback import FeedbackTracker
+from .feedback import FeedbackTracker, FeedbackEntry
 from .parallel_executor import ParallelExecutor, get_ready_tasks_batch
 from .replanner import Replanner
 from .domain_context import DomainContext, DomainDetector
 from .long_jobs import LongRunningJobManager
 from .critic import Critic, CriticFeedback
+from .history import HistoryRecorder
 from .completion_summary import CompletionSummary
 
 console = Console()
@@ -47,6 +48,8 @@ class Orchestrator:
         subagent_max_turns: int = 12,
         skip_integration_tests: bool = True,
         pytest_addopts: Optional[str] = None,
+        surgical_mode: bool = False,
+        surgical_paths: Optional[List[str]] = None,
     ):
         self.workspace = workspace.resolve()
         self.project_root = self.workspace.parent
@@ -64,7 +67,7 @@ class Orchestrator:
         self.tasks = TaskGraph(self.workspace / "current" / "TASKS.md")
 
         self.tester = Tester(self.project_root)
-        self.reviewer = Reviewer(self.project_root, self.logger)
+        self.reviewer = Reviewer(self.project_root, self.logger, log_workspace=self.workspace)
         self.notes_manager = NotesManager(self.workspace)
         self._latest_notes_summary = self.notes_manager.concise_summary()
 
@@ -81,17 +84,23 @@ class Orchestrator:
         self.docs_manager = DocsManager(self.project_root, self.logger)
         self.docs_manager.initialize()
 
+        self.history_recorder = HistoryRecorder(self.workspace)
         self.parallel_executor = ParallelExecutor(max_parallel=self.max_parallel_tasks)
-        self.replanner = Replanner(self.project_root, self.logger)
+        self.replanner = Replanner(self.project_root, self.logger, log_workspace=self.workspace)
         self.long_jobs = LongRunningJobManager(self.workspace, self.project_root)
-        self.critic = Critic(self.project_root)
+        self.critic = Critic(self.project_root, self.workspace)
         self.completion_summary = CompletionSummary(self.project_root, self.workspace)
+        self.surgical_mode = surgical_mode
+        self.surgical_paths = [str(Path(p)) for p in surgical_paths] if surgical_paths else []
+        self.project_domain = DomainDetector.detect(self.project_root, self.goals.core_goals)
 
         self._task_save_lock = threading.Lock()
         self._step_lock = threading.Lock()
         self._active_tasks: Set[str] = set()
         self._task_replan_depth: Dict[str, int] = {}
         self.max_replan_depth = 3
+        self._active_user_feedback: List[Tuple[FeedbackEntry, int]] = []
+        self._user_feedback_ttl = 5
 
         for existing_task_id in self.tasks._tasks.keys():
             self._task_replan_depth.setdefault(existing_task_id, 0)
@@ -126,6 +135,8 @@ class Orchestrator:
             self._latest_notes_summary = self.notes_manager.concise_summary()
             self.long_jobs.process_queue()
             self.long_jobs.poll()
+            self._prune_user_feedback()
+            self._ingest_user_feedback()
 
             ready_tasks = get_ready_tasks_batch(
                 self.tasks,
@@ -205,6 +216,8 @@ class Orchestrator:
                 step_override=attempt_step,
             )
 
+            self._prune_user_feedback()
+            self._ingest_user_feedback()
             agent_result = self._run_task_agent(task, attempt_step)
             if agent_result.get("status") not in {"success", "SUCCESS"}:
                 self._handle_agent_failure(task, agent_result)
@@ -214,7 +227,7 @@ class Orchestrator:
 
             last_test_results = self._run_tests(task)
             last_review_feedback = self._run_reviewer(task, last_test_results, step=attempt_step)
-            last_critic_feedback = self.critic.evaluate(task.id)
+            last_critic_feedback = self.critic.evaluate(task.id, domain=self.project_domain)
             self._record_feedback(task, last_test_results, last_review_feedback, last_critic_feedback)
 
             if last_critic_feedback and last_critic_feedback.summary:
@@ -228,6 +241,7 @@ class Orchestrator:
 
                 # Update documentation and changelog
                 self._update_docs_and_changelog(task, last_review_feedback, success=True)
+                self._log_task_history_event(task, last_review_feedback, last_critic_feedback, last_test_results)
 
                 break
 
@@ -268,6 +282,7 @@ class Orchestrator:
             if fallback_critic.status != "PASS":
                 failure_review.summary += f" | Critic: {fallback_critic.summary}"
             self._update_docs_and_changelog(task, failure_review, success=False)
+            self._log_task_history_event(task, failure_review, last_critic_feedback or fallback_critic, last_test_results)
 
         self._save_tasks()
 
@@ -287,6 +302,7 @@ class Orchestrator:
             workspace=self.project_root,
             max_turns=self.subagent_max_turns,
             model="haiku",
+            log_workspace=self.workspace,
         )
         return agent.execute()
 
@@ -306,11 +322,7 @@ class Orchestrator:
     def _run_reviewer(self, task: Task, tests: List[TestResult], step: int) -> ReviewFeedback:
         console.print(f"[cyan]{_timestamp()} [REVIEW][/cyan] Requesting review for {task.id}")
 
-        # Check for new user feedback
-        user_feedback = []
-        if self.feedback_tracker.has_new_feedback():
-            user_feedback = self.feedback_tracker.consume_feedback()
-            console.print(f"[yellow]{_timestamp()} [FEEDBACK][/yellow] Consumed {len(user_feedback)} user feedback entries")
+        user_feedback = [entry for entry, _ in self._active_user_feedback]
 
         test_payload = [
             {
@@ -333,10 +345,14 @@ class Orchestrator:
             trace_id=f"review-{uuid4().hex[:8]}",
             parent_trace_id=self.trace_id,
             notes_summary=self._latest_notes_summary,
+            domain=self.project_domain,
             user_feedback=user_feedback,
             short_mode=False,
             retry_count=0,
         )
+
+        if self._handle_reviewer_timeout_auto_pass(feedback, test_payload):
+            return feedback
 
         if self._needs_reviewer_retry(feedback):
             console.print(
@@ -350,16 +366,13 @@ class Orchestrator:
                 trace_id=f"review-{uuid4().hex[:8]}",
                 parent_trace_id=self.trace_id,
                 notes_summary=self._latest_notes_summary,
+                domain=self.project_domain,
                 user_feedback=user_feedback,
                 short_mode=True,
                 retry_count=1,
             )
 
-        if test_payload and all(item["passed"] for item in test_payload) and "max turns" in feedback.summary.lower():
-            feedback.status = "PASS"
-            feedback.summary = "Reviewer timed out, but all acceptance checks passed."
-            if not feedback.next_steps:
-                feedback.next_steps = "Proceed; reviewer hit max turns but tests are green."
+        self._handle_reviewer_timeout_auto_pass(feedback, test_payload)
 
         console.print(
             f"[dim]{_timestamp()} [REVIEW][/dim] Status: {feedback.status} | {feedback.summary}"
@@ -373,6 +386,27 @@ class Orchestrator:
         return any(marker in summary_lower for marker in timeout_markers) or any(
             marker in raw_lower for marker in timeout_markers
         )
+
+    def _handle_reviewer_timeout_auto_pass(self, feedback: ReviewFeedback, test_payload: List[Dict[str, Any]]) -> bool:
+        """Auto-accept reviewer timeouts when tests already prove success."""
+        if not test_payload or not all(item["passed"] for item in test_payload):
+            return False
+
+        summary_lower = feedback.summary.lower() if feedback.summary else ""
+        raw_lower = feedback.raw_output.lower() if feedback.raw_output else ""
+        timeout_markers = ["max turns", "timed out", "timeout", "error_max_turns"]
+
+        if any(marker in summary_lower for marker in timeout_markers) or any(marker in raw_lower for marker in timeout_markers):
+            feedback.status = "PASS"
+            if not feedback.summary or "timeout" in summary_lower:
+                feedback.summary = "Reviewer timed out, but all acceptance checks passed."
+            if not feedback.next_steps:
+                feedback.next_steps = "Proceed; reviewer hit max turns but tests are green."
+            console.print(
+                f"[yellow]{_timestamp()} [REVIEW][/yellow] Reviewer timeout auto-accepted because tests passed."
+            )
+            return True
+        return False
 
     # --------------------------------------------------------------------- #
     # Decision helpers                                                      #
@@ -411,7 +445,7 @@ class Orchestrator:
             )
             return False
 
-        critic_feedback = self.critic.evaluate(task.id)
+        critic_feedback = self.critic.evaluate(task.id, domain=self.project_domain)
         if critic_feedback.status != "PASS":
             console.print(
                 f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] "
@@ -433,6 +467,7 @@ class Orchestrator:
 
         self._record_feedback(task, test_results, synthetic_review, critic_feedback)
         self._update_docs_and_changelog(task, synthetic_review, success=True)
+        self._log_task_history_event(task, synthetic_review, critic_feedback, test_results)
         self._save_tasks()
 
         console.print(
@@ -563,40 +598,38 @@ class Orchestrator:
 
         console.print(f"[cyan]{_timestamp()} [DOCS][/cyan] Updating documentation and changelog for {task.id}")
 
-        # Determine change type and description
-        if success:
-            # Infer change type from task title/description
+        if not success:
+            console.print(
+                f"[dim]{_timestamp()} [DOCS][/dim] Skipping changelog entry for failed task {task.id}"
+            )
+        else:
+            # Determine change type and description
             title_lower = task.title.lower()
             if "fix" in title_lower or "bug" in title_lower:
                 change_type = ChangeType.FIXED
-                desc = f"Fixed: {task.title}"
             elif "add" in title_lower or "implement" in title_lower or "create" in title_lower:
                 change_type = ChangeType.ADDED
-                desc = f"Added: {task.title}"
-            elif "update" in title_lower or "change" in title_lower or "modify" in title_lower:
-                change_type = ChangeType.CHANGED
-                desc = f"Changed: {task.title}"
             elif "remove" in title_lower or "delete" in title_lower:
                 change_type = ChangeType.REMOVED
-                desc = f"Removed: {task.title}"
             else:
                 change_type = ChangeType.CHANGED
-                desc = task.title
-        else:
-            # Task failed - document attempt
-            change_type = ChangeType.ATTEMPTED
-            desc = f"Attempted {task.title} (failed after {task.attempt_count} attempts)"
+
+            review_snippet = (review.summary or "").strip()
+            if len(review_snippet) > 140:
+                review_snippet = review_snippet[:137].rstrip() + "..."
+            desc = f"{task.title}" + (f" — {review_snippet}" if review_snippet else "")
 
         # Add to changelog
-        try:
-            version = self.changelog_manager.add_entry(
-                change_type=change_type,
-                description=desc,
-                task_id=task.id,
-            )
-            console.print(f"[dim]{_timestamp()} [DOCS][/dim] Added changelog entry: {version}")
-        except Exception as e:
-            console.print(f"[yellow]{_timestamp()} [DOCS][/yellow] Failed to update changelog: {e}")
+        if success:
+            try:
+                version = self.changelog_manager.add_entry(
+                    change_type=change_type,
+                    description=desc,
+                    task_id=task.id,
+                )
+                console.print(f"[dim]{_timestamp()} [DOCS][/dim] Added changelog entry: {version}")
+            except Exception as e:
+                console.print(f"[yellow]{_timestamp()} [DOCS][/yellow] Failed to update changelog: {e}")
 
         # Update documentation
         try:
@@ -615,9 +648,19 @@ class Orchestrator:
                 task=task,
                 success=success,
                 changes_summary=changes_summary,
-                workspace=self.workspace,
+                workspace=self.project_root,
                 step=self.current_step,
                 parent_trace_id=self.trace_id,
+                log_workspace=self.workspace,
+            )
+
+            self.docs_manager.ensure_readme_alignment(
+                project_readme=self.project_root / "README.md",
+                docs_directory=self.project_root / "docs",
+                recent_task=task,
+                success=success,
+                logger=self.logger,
+                step=self.current_step,
             )
 
             if docs_result.get("success"):
@@ -634,7 +677,57 @@ class Orchestrator:
     # Utility functions                                                     #
     # --------------------------------------------------------------------- #
 
+    def _ingest_user_feedback(self) -> None:
+        """Check USER_NOTES for updates and cache them for prompts."""
+        if not self.feedback_tracker.has_new_feedback():
+            return
+
+        entries = self.feedback_tracker.consume_feedback()
+        if not entries:
+            return
+
+        self._active_user_feedback.extend((entry, self.current_step) for entry in entries)
+        # Keep only the most recent 10 entries to avoid runaway context
+        self._active_user_feedback = self._active_user_feedback[-10:]
+        console.print(
+            f"[yellow]{_timestamp()} [FEEDBACK][/yellow] "
+            f"Ingested {len(entries)} user feedback entr{'y' if len(entries) == 1 else 'ies'}"
+        )
+
+    def _prune_user_feedback(self) -> None:
+        """Drop stale user feedback entries after TTL expires."""
+        if not self._active_user_feedback:
+            return
+
+        self._active_user_feedback = [
+            (entry, seen_step)
+            for entry, seen_step in self._active_user_feedback
+            if self.current_step - seen_step <= self._user_feedback_ttl
+        ]
+
     def _build_task_agent_prompt(self, task: Task) -> str:
+        feedback_section = ""
+        if self._active_user_feedback:
+            lines = [
+                f"- [{'general' if entry.is_general else entry.task_id}] {entry.content}"
+                for entry, _ in self._active_user_feedback[-5:]
+            ]
+            feedback_section = f"\n## User Feedback (PRIORITY)\n{chr(10).join(lines)}\n"
+
+        surgical_section = ""
+        if self.surgical_mode:
+            allowed = self.surgical_paths or ["Focus on the smallest viable change."]
+            allowed_block = "\n".join(f"- {path}" for path in allowed)
+            surgical_section = f"""
+## Surgical Constraints
+- Limit work to the files/modules listed below.
+- Avoid refactors or wide-scoped changes.
+- Keep diffs tight and explain every change explicitly.
+
+Allowed focus areas:
+{allowed_block}
+"""
+
         return f"""You are the implementation agent for {task.id}.
 
 ## Objective
@@ -642,6 +735,10 @@ class Orchestrator:
 
 ## Acceptance Criteria
 {chr(10).join(f'- {check.description} ({check.type}:{check.target})' for check in task.acceptance_criteria) or '- None provided'}
+
+{feedback_section if feedback_section else ''}
+
+{surgical_section if surgical_section else ''}
 
 ## Guidelines
 - Work incrementally and keep changes minimal but functional.
@@ -689,7 +786,14 @@ Respond with the mandatory JSON block when finished."""
         if task.next_action:
             lines.append(f"\n### Requested Next Action\n- {task.next_action}")
 
-        domain = DomainDetector.detect(self.project_root, self.goals.core_goals)
+        if self.surgical_mode:
+            lines.append("\n### Surgical Constraints")
+            if self.surgical_paths:
+                lines.extend(f"- Focus on: {path}" for path in self.surgical_paths)
+            else:
+                lines.append("- Keep scope minimal; no broad refactors")
+
+        domain = self.project_domain
         domain_context = DomainContext.build(domain, self.project_root)
         if domain_context:
             pretty_domain = domain.replace("_", " ").title()
@@ -724,7 +828,49 @@ Respond with the mandatory JSON block when finished."""
             lines.append("\n### Requested Next Action")
             lines.append(f"- {task.next_action}")
 
+        if self.surgical_mode:
+            lines.append("\n### Surgical Constraints")
+            if self.surgical_paths:
+                lines.extend(f"- Focus on: {path}" for path in self.surgical_paths)
+            else:
+                lines.append("- Maintain minimal diffs; no wide-ranging edits")
+
+        if self._active_user_feedback:
+            lines.append("\n### Latest User Feedback (Priority)")
+            for entry, _ in self._active_user_feedback[-5:]:
+                scope = entry.task_id or "general"
+                lines.append(f"- [{scope}] {entry.content}")
+
         return "\n".join(lines)
+
+    def _serialize_tests(self, tests: List[TestResult]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "description": res.check.description,
+                "type": res.check.type,
+                "target": res.check.target,
+                "passed": res.passed,
+                "message": res.message,
+            }
+            for res in tests
+        ]
+
+    def _log_task_history_event(
+        self,
+        task: Task,
+        review: ReviewFeedback,
+        critic: Optional[CriticFeedback],
+        tests: List[TestResult],
+    ) -> None:
+        self.history_recorder.record_task_event(
+            task_id=task.id,
+            title=task.title,
+            status=task.status.name,
+            attempts=task.attempt_count,
+            review_summary=review.summary or "",
+            critic_summary=critic.summary if critic else None,
+            tests=self._serialize_tests(tests),
+        )
 
     def _next_step(self) -> int:
         """Atomically increment and return the current step counter."""

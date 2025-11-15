@@ -198,6 +198,11 @@ class TaskGraph:
         visit(task_id)
         return chain
 
+    @property
+    def tasks(self) -> Dict[str, Task]:
+        """Expose tasks dictionary for read-only consumers."""
+        return self._tasks
+
     def get_dependents(self, task_id: str) -> List[str]:
         """Return tasks that depend on the given task."""
         if not self.graph.has_node(task_id):

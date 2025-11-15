@@ -1,14 +1,20 @@
 """Completion summary generator for orchestrator runs."""
 
+from __future__ import annotations
+
+import ast
+import json
 from pathlib import Path
-from typing import List
+from typing import Dict, List
+from uuid import uuid4
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 
 from .subagent import Subagent
 from .domain_context import DomainDetector
-from ..models import Goal
+from .logger import EventLogger
+from ..models import Goal, TaskStatus
 from ..planning.tasks import TaskGraph
 
 console = Console()
@@ -51,7 +57,12 @@ class CompletionSummary:
         domain = DomainDetector.detect(self.project_root, goals)
 
         # Generate usage instructions via subagent
-        usage_instructions = self._generate_usage_instructions(domain, goals, tasks)
+        usage_instructions = self._generate_usage_instructions(
+            domain=domain,
+            goals=goals,
+            tasks=tasks,
+            completion_reason=completion_reason,
+        )
 
         if usage_instructions:
             console.print(Panel(
@@ -69,9 +80,11 @@ class CompletionSummary:
 
     def _generate_usage_instructions(
         self,
+        *,
         domain: str,
         goals: List[Goal],
         tasks: TaskGraph,
+        completion_reason: str,
     ) -> str:
         """Generate contextual usage instructions using subagent."""
 
@@ -81,10 +94,22 @@ class CompletionSummary:
             for goal in goals
         )
 
-        completed_tasks = [t for t in tasks.tasks.values() if t.status.value == "complete"]
-        task_summary = "\n".join(
-            f"- {task.title}: {task.description[:100]}"
-            for task in completed_tasks[:10]  # Limit to recent 10
+        recent_task_lines = self._recent_completed_tasks(tasks)
+        task_summary = "\n".join(recent_task_lines) if recent_task_lines else "- No completed tasks recorded yet."
+
+        task_stats = self._task_statistics(tasks)
+        goals_done = len([goal for goal in goals if goal.achieved])
+        goals_total = len(goals)
+        incomplete_goals = [goal.description for goal in goals if not goal.achieved]
+        incomplete_goal_lines = (
+            "\n".join(f"- {desc}" for desc in incomplete_goals[:5])
+            if incomplete_goals
+            else "- None"
+        )
+        status_snapshot = (
+            f"- Completion result: {completion_reason}\n"
+            f"- Goals achieved: {goals_done}/{goals_total}\n"
+            f"- Tasks: {task_stats['completed']} completed / {task_stats['failed']} failed / {task_stats['pending']} pending"
         )
 
         instruction = f"""Analyze this project and generate concise usage instructions.
@@ -98,6 +123,12 @@ Project root: {self.project_root}
 
 ## Recently Completed Tasks
 {task_summary}
+
+## Status Snapshot
+{status_snapshot}
+
+## Incomplete Goals
+{incomplete_goal_lines}
 
 ## Your Task
 Generate a concise markdown guide (200-400 words) explaining how to use this project:
@@ -115,26 +146,37 @@ Generate a concise markdown guide (200-400 words) explaining how to use this pro
 - Include real command examples (not placeholders)
 - Be specific and actionable
 - Keep it concise
+- Only describe the project as production-ready if all goals are achieved, no tasks failed, and completion_reason == SUCCESS. Otherwise explicitly warn the reader about outstanding work or failures.
 
 Return ONLY the markdown guide, no preamble."""
+
+        # Create minimal logger for subagent
+        logger = EventLogger(self.workspace / "full_history.jsonl")
+        trace_id = str(uuid4())
 
         agent = Subagent(
             task_id="completion-summary",
             task_description=instruction,
             context="",
+            parent_trace_id=trace_id,
+            logger=logger,
+            step=0,
+            workspace=self.project_root,
             max_turns=15,
             model="sonnet",  # Use Sonnet for higher quality summary
-            workspace=self.workspace,
-            project_root=self.project_root,
+            log_workspace=self.workspace,
         )
 
         result = agent.execute()
 
         if result.get("status") == "success":
-            return result.get("response", "").strip()
+            content = result.get("output") or result.get("summary") or ""
+            markdown = self._extract_markdown(content)
+            if markdown:
+                return markdown
 
         # Fallback: basic instructions if subagent fails
-        return self._generate_fallback_instructions(domain)
+        return self._generate_fallback_instructions(domain, task_summary)
 
     def _get_domain_instructions(self, domain: str) -> str:
         """Get domain-specific instructions for usage guide generation."""
@@ -167,45 +209,148 @@ Return ONLY the markdown guide, no preamble."""
 - Show how to get help/documentation
 """
 
-    def _generate_fallback_instructions(self, domain: str) -> str:
+    def _generate_fallback_instructions(self, domain: str, task_summary: str) -> str:
         """Generate basic fallback instructions if subagent fails."""
         if domain == "data_science":
-            return """## Quick Start
-Run training: `python train.py` or `python src/train.py`
+            return f"""## Quick Start
+Run pipeline: `uv run python main.py`
 Check experiments: `cat .agentic/history/experiments.jsonl`
 
 ## Key Files
 - Training scripts: Look for `train*.py` files
 - Notebooks: Check `.ipynb` files for exploratory analysis
-- Metrics: `.agentic/history/experiments.jsonl` contains run history
+- Metrics: `.agentic/history/experiments.jsonl`
+
+## Recent Work
+{task_summary}
 """
         elif domain == "backend":
-            return """## Quick Start
-Start server: `python main.py` or `uvicorn app:app --reload`
+            return f"""## Quick Start
+Start server: `uv run python main.py` or `uvicorn app:app --reload`
 
 ## Key Commands
-- Start dev: Check `pyproject.toml` or `package.json` for scripts
-- Run tests: `pytest` or `npm test`
-- Migrations: Check for `alembic` or database migration files
+- Start dev: see scripts in `pyproject.toml`
+- Run tests: `uv run pytest`
+- Environment: configure `.env` files
+
+## Recent Work
+{task_summary}
 """
         elif domain == "frontend":
-            return """## Quick Start
-Start dev: `npm run dev` or `npm start`
+            return f"""## Quick Start
+Start dev: `npm run dev`
 Build: `npm run build`
 
 ## Key Files
 - Config: `package.json`, `vite.config.ts`, `next.config.js`
-- Environment: `.env.local` or `.env.example`
+- Environment: `.env.local`
+
+## Recent Work
+{task_summary}
 """
         else:
-            return """## Quick Start
-Check README.md or docs/ directory for usage instructions.
+            return f"""## Quick Start
+Run CLI: `uv run python main.py` (see README.md for options)
 
 ## Configuration
-Look for:
-- `config.yaml`, `pyproject.toml`, or similar configuration files
-- `.env` files for environment variables
+- `pyproject.toml` for dependencies/CLI entry points
+- `.agentic/current/TASKS.md` for remaining work
+
+## Recent Work
+{task_summary}
 """
+
+    def _recent_completed_tasks(self, tasks: TaskGraph, limit: int = 10) -> List[str]:
+        """Return textual summaries of recent completed tasks."""
+        completed = [
+            task for task in tasks.tasks.values()
+            if task.status == TaskStatus.COMPLETE
+        ]
+        if completed:
+            return [
+                f"- {task.title}: {task.description[:120]}"
+                for task in completed[-limit:]
+            ]
+
+        history_file = self.workspace / "history" / "tasks.jsonl"
+        if not history_file.exists():
+            return []
+
+        lines = history_file.read_text(encoding="utf-8").splitlines()
+        entries: List[str] = []
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if str(data.get("status", "")).upper() != TaskStatus.COMPLETE.name:
+                continue
+            title = data.get("title", "Task")
+            summary = (data.get("review_summary") or "")[:120]
+            text = f"- {title}: {summary}" if summary else f"- {title}"
+            entries.append(text)
+            if len(entries) >= limit:
+                break
+        return list(reversed(entries))
+
+    def _task_statistics(self, tasks: TaskGraph) -> Dict[str, int]:
+        all_tasks = list(tasks.tasks.values())
+        completed = [t for t in all_tasks if t.status == TaskStatus.COMPLETE]
+        failed = [t for t in all_tasks if t.status == TaskStatus.FAILED]
+        pending = [
+            t for t in all_tasks
+            if t.status in {TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS}
+        ]
+        return {
+            "completed": len(completed),
+            "failed": len(failed),
+            "pending": len(pending),
+        }
+
+    def _extract_markdown(self, output: str) -> str:
+        """Try to extract markdown content from subagent output."""
+        if not output:
+            return ""
+
+        parsed = None
+        try:
+            parsed = json.loads(output)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(output)
+            except Exception:
+                parsed = None
+
+        if isinstance(parsed, dict):
+            for key in ("result", "content", "output", "response"):
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    return self._strip_trailing_json(value.strip())
+
+        return self._strip_trailing_json(output.strip())
+
+    def _strip_trailing_json(self, text: str) -> str:
+        """Remove trailing JSON metadata blocks from agent output."""
+        lines = text.splitlines()
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("{") and self._looks_like_json_block(lines[idx:]):
+                return "\n".join(lines[:idx]).rstrip()
+        return text
+
+    def _looks_like_json_block(self, lines: List[str]) -> bool:
+        """Heuristic: determine if remaining lines form a JSON object."""
+        snippet = "\n".join(lines).strip()
+        if not snippet.startswith("{"):
+            return False
+        try:
+            json.loads(snippet)
+            return True
+        except json.JSONDecodeError:
+            return False
 
     def _display_goals_summary(self, goals: List[Goal]) -> None:
         """Display goals achievement summary."""
@@ -228,9 +373,12 @@ Look for:
     def _display_task_statistics(self, tasks: TaskGraph) -> None:
         """Display task execution statistics."""
         all_tasks = list(tasks.tasks.values())
-        completed = [t for t in all_tasks if t.status.value == "complete"]
-        failed = [t for t in all_tasks if t.status.value == "failed"]
-        pending = [t for t in all_tasks if t.status.value in ("pending", "in_progress")]
+        completed = [t for t in all_tasks if t.status == TaskStatus.COMPLETE]
+        failed = [t for t in all_tasks if t.status == TaskStatus.FAILED]
+        pending = [
+            t for t in all_tasks
+            if t.status in {TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS}
+        ]
 
         console.print("\n[bold]Task Statistics[/bold]")
         console.print(f"  Total tasks: {len(all_tasks)}")

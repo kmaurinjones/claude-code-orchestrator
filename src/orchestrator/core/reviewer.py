@@ -29,6 +29,7 @@ def _build_reviewer_task_description(
     notes_overview: str,
     user_feedback: List[FeedbackEntry],
     experiments_summary: str,
+    domain: str,
     short_mode: bool = False,
     retry_count: int = 0,
 ) -> str:
@@ -98,6 +99,9 @@ def _build_reviewer_task_description(
 ## User Feedback (CRITICAL - must address)
 {user_feedback_section}
 
+## Domain Focus
+{_domain_reviewer_focus(domain)}
+
 ## Acceptance Criteria
 {chr(10).join(f'- {check.description}' for check in task.acceptance_criteria[:4]) or '- None'}
 {"\n- ..." if len(task.acceptance_criteria) > 4 else ''}
@@ -146,9 +150,10 @@ def _extract_json_block(raw_output: str) -> Optional[Dict[str, Any]]:
 class Reviewer:
     """Drive reviewer subagent and parse structured feedback."""
 
-    def __init__(self, project_root: Path, logger: EventLogger):
+    def __init__(self, project_root: Path, logger: EventLogger, log_workspace: Optional[Path] = None):
         self.project_root = Path(project_root).resolve()
         self.logger = logger
+        self.log_workspace = Path(log_workspace).resolve() if log_workspace else self.project_root
 
     def review(
         self,
@@ -159,6 +164,7 @@ class Reviewer:
         trace_id: str,
         parent_trace_id: str,
         notes_summary: str,
+        domain: str,
         user_feedback: Optional[List[FeedbackEntry]] = None,
         short_mode: bool = False,
         retry_count: int = 0,
@@ -170,9 +176,13 @@ class Reviewer:
             notes_summary,
             user_feedback or [],
             self._get_experiment_history(),
+            domain,
             short_mode=short_mode,
             retry_count=retry_count,
         )
+
+        model = "haiku" if short_mode else "sonnet"
+        max_turns = 20 if short_mode else 28
 
         agent = Subagent(
             task_id=f"review-{task.id}",
@@ -182,8 +192,9 @@ class Reviewer:
             logger=self.logger,
             step=step,
             workspace=self.project_root,
-            max_turns=24 if short_mode else 18,
-            model="haiku",
+            max_turns=max_turns,
+            model=model,
+            log_workspace=self.log_workspace,
         )
 
         result = agent.execute()
@@ -255,3 +266,25 @@ class Reviewer:
             return "No experiments recorded."
 
         return "\n".join(reversed(entries))
+
+
+def _domain_reviewer_focus(domain: str) -> str:
+    domain = (domain or "tooling").lower()
+    if domain == "data_science":
+        return (
+            "- Verify experiments were logged (metrics + artifacts) and reference the latest run.\n"
+            "- Ensure calibration/threshold changes are documented alongside evaluation metrics."
+        )
+    if domain == "backend":
+        return (
+            "- Check API contracts, env configuration, and migration steps.\n"
+            "- Highlight any performance or security considerations."
+        )
+    if domain == "frontend":
+        return (
+            "- Confirm build/test commands are updated and note UX impacts."
+        )
+    return (
+        "- Confirm README/changelog entries reflect the change.\n"
+        "- Call out risks or follow-ups before marking complete."
+    )

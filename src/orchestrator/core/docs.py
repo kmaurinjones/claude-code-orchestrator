@@ -1,7 +1,7 @@
 """Documentation manager for maintaining project docs/ directory."""
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from uuid import uuid4
 
 from .subagent import Subagent
@@ -19,15 +19,13 @@ class DocsManager:
 
     def initialize(self) -> None:
         """Create initial docs/ directory structure if it doesn't exist."""
-        if self.docs_dir.exists():
-            return
+        if not self.docs_dir.exists():
+            self.docs_dir.mkdir(parents=True, exist_ok=True)
 
-        self.docs_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create initial README
-        readme = self.docs_dir / "README.md"
-        if not readme.exists():
-            readme.write_text("""# Project Documentation
+        # Create initial docs README
+        docs_readme = self.docs_dir / "README.md"
+        if not docs_readme.exists():
+            docs_readme.write_text("""# Project Documentation
 
 ## Overview
 
@@ -51,7 +49,24 @@ This directory contains comprehensive documentation for the project.
 [To be populated]
 """)
 
-        # Create components directory
+        # Ensure top-level project README exists
+        project_readme = self.project_root / "README.md"
+        if not project_readme.exists():
+            project_readme.write_text("""# Project Overview
+
+## Quick Start
+
+Explain how to run the project here.
+
+## Features
+
+- Bullet point summaries
+
+## Configuration
+
+Document environment variables or config files here.
+""")
+
         (self.docs_dir / "components").mkdir(exist_ok=True)
 
     def update_after_task(
@@ -62,6 +77,7 @@ This directory contains comprehensive documentation for the project.
         workspace: Path,
         step: int,
         parent_trace_id: str,
+        log_workspace: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
         Update documentation after a task completes.
@@ -131,7 +147,8 @@ Focus on making the documentation useful for someone new to the project.
             step=step,
             workspace=workspace,
             max_turns=20,  # Docs updates may need more turns
-            model="haiku",  # Use haiku for cost efficiency
+            model="haiku",
+            log_workspace=log_workspace or workspace,
         )
 
         result = agent.execute()
@@ -217,11 +234,75 @@ Focus on making the documentation useful for someone new to the project.
 
         return "\n".join(f"- `{doc}`" for doc in docs_list)
 
+    def ensure_readme_alignment(
+        self,
+        project_readme: Path,
+        docs_directory: Path,
+        recent_task: Task,
+        success: bool,
+        logger: EventLogger,
+        step: int,
+    ) -> None:
+        """Ensure top-level README exists and stays aligned with docs state."""
+        project_readme = Path(project_readme)
+        docs_directory = Path(docs_directory)
+
+        if not project_readme.exists():
+            self.initialize()
+
+        instructions = f"""You are the README maintainer. Update the top-level README to reflect the current state of the project.
+
+## Current Task
+- ID: {recent_task.id}
+- Title: {recent_task.title}
+- Status: {'SUCCESS' if success else 'FAILED'}
+- Description: {recent_task.description}
+
+## Requirements
+1. Ensure the README includes:
+   - Concise overview of what the project does
+   - Prerequisites (language/runtime, packages)
+   - Quick start instructions (how to run the main functionality)
+   - Optional commands or features that exist (only mention real functionality)
+2. Keep it concise (not thousands of words) but accurate and actionable.
+3. Align sections with docs/README.md when applicable.
+"""
+
+        agent = Subagent(
+            task_id=f"readme-{recent_task.id}",
+            task_description=instructions,
+            context=self._build_readme_context(project_readme, docs_directory),
+            parent_trace_id=f"docs-{recent_task.id}",
+            logger=logger,
+            step=step,
+            workspace=self.project_root,
+            max_turns=12,
+            model="haiku",
+            log_workspace=self.project_root / ".agentic" if (self.project_root / ".agentic").exists() else self.project_root,
+        )
+
+        agent.execute()
+
+    def _build_readme_context(self, project_readme: Path, docs_directory: Path) -> str:
+        sections = []
+
+        if project_readme.exists():
+            sections.append("## Existing README")
+            sections.append(project_readme.read_text()[:2000])
+
+        docs_readme = docs_directory / "README.md"
+        if docs_readme.exists():
+            sections.append("## docs/README.md")
+            sections.append(docs_readme.read_text()[:2000])
+
+        return "\n".join(sections)
+
     def generate_comprehensive_docs(
         self,
         workspace: Path,
         step: int,
         parent_trace_id: str,
+        log_workspace: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
         Generate comprehensive documentation for the entire project.
@@ -266,7 +347,8 @@ Create comprehensive, accurate, and useful documentation.
             step=step,
             workspace=workspace,
             max_turns=30,  # Comprehensive docs need more turns
-            model="sonnet",  # Use sonnet for better quality on comprehensive docs
+            model="sonnet",
+            log_workspace=log_workspace or workspace,
         )
 
         result = agent.execute()

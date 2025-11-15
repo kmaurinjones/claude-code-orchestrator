@@ -1,6 +1,6 @@
 [project]
 name = "agentic-orchestrator"
-version = "0.6.2"
+version = "0.7.8"
 description = "Self-orchestrating agentic system using Claude Code CLI"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -8,6 +8,7 @@ import argparse
 
 from ..core.orchestrator import Orchestrator
 from ..core.subagent import find_claude_executable
+from ..core.experiments import ExperimentManager
 from ..models import OrchestratorConfig
 from .. import __version__
 
@@ -23,6 +24,7 @@ def main():
     interview_parser = subparsers.add_parser("interview", help="Start project with interview")
     interview_parser.add_argument("--workspace", type=Path, default=Path(".agentic"))
     interview_parser.add_argument("--update", action="store_true", help="Update existing goals and tasks instead of starting fresh")
+    interview_parser.add_argument("--fresh", action="store_true", help="Ignore existing GOALS/TASKS even if they exist")
 
     # Run command
     run_parser = subparsers.add_parser("run", help="Run orchestrator")
@@ -30,6 +32,25 @@ def main():
     run_parser.add_argument("--min-steps", type=int, default=None, help="Minimum iterations (overrides config)")
     run_parser.add_argument("--max-steps", type=int, default=None, help="Maximum iterations (overrides config)")
     run_parser.add_argument("--max-parallel-tasks", type=int, default=None, help="Maximum number of tasks to run in parallel (overrides config)")
+    run_parser.add_argument("--surgical", action="store_true", help="Enable surgical mode (tight scope, minimal edits)")
+    run_parser.add_argument(
+        "--surgical-path",
+        dest="surgical_paths",
+        action="append",
+        default=None,
+        help="Paths that the surgical run should focus on (repeat for multiple).",
+    )
+
+    # Experiment command
+    experiment_parser = subparsers.add_parser("experiment", help="Schedule a long-running experiment")
+    experiment_parser.add_argument("--workspace", type=Path, default=Path(".agentic"))
+    experiment_parser.add_argument("--cmd", required=True, help="Command to execute")
+    experiment_parser.add_argument("--run-name", default=None, help="Name recorded in experiment history")
+    experiment_parser.add_argument("--workdir", type=Path, default=Path("."), help="Working directory for the command")
+    experiment_parser.add_argument("--timeout", type=int, default=None, help="Optional timeout (seconds)")
+    experiment_parser.add_argument("--notes", default=None, help="Optional notes to store with the experiment")
+    experiment_parser.add_argument("--task-id", default=None, help="Related task identifier (optional)")
+    experiment_parser.add_argument("--metrics-file", default=None, help="Optional path to JSON metrics emitted by the command")
 
     args = parser.parse_args()
 
@@ -60,9 +81,12 @@ def main():
         goals_file = args.workspace / "current" / "GOALS.md"
         tasks_file = args.workspace / "current" / "TASKS.md"
 
-        if args.update:
+        has_existing = goals_file.exists() and tasks_file.exists()
+        use_update_flow = args.update or (has_existing and not args.fresh)
+
+        if use_update_flow:
             # Update mode
-            if not goals_file.exists() or not tasks_file.exists():
+            if not has_existing:
                 console.print("[red]ERROR:[/red] --update requires existing GOALS.md and TASKS.md")
                 console.print("Run 'orchestrate interview' without --update first.")
                 sys.exit(1)
@@ -96,7 +120,7 @@ Conduct an interactive discussion with the user to understand what they want to 
 - Modify priorities or dependencies
 - Adjust constraints
 
-After gathering all amendments, UPDATE the TWO files (.agentic/current/GOALS.md and .agentic/current/TASKS.md) with the changes while preserving the format.
+After gathering all amendments, UPDATE the TWO files (.agentic/current/GOALS.md and .agentic/current/TASKS.md) with the changes while preserving the format. Treat the existing content as the baseline and continue the plan rather than restarting from scratch.
 
 IMPORTANT: All tasks in TASKS.md must have (priority: X) where X is 1-10, with 10 being highest priority.
 
@@ -235,7 +259,9 @@ Start the interview now.
             max_parallel_tasks=max_parallel_tasks,
             subagent_max_turns=config.subagent_max_turns,
             skip_integration_tests=config.skip_integration_tests,
-            pytest_addopts=config.pytest_addopts
+            pytest_addopts=config.pytest_addopts,
+            surgical_mode=args.surgical,
+            surgical_paths=args.surgical_paths,
         )
         result = orch.run()
 
@@ -253,6 +279,20 @@ Start the interview now.
             console.print("Some goals may not be complete. Check .agentic/current/TASKS.md")
 
         console.print(f"\nEvent log: {args.workspace / 'full_history.jsonl'}")
+
+    elif args.command == "experiment":
+        manager = ExperimentManager(args.workspace)
+        job_file = manager.schedule(
+            command=args.cmd,
+            run_name=args.run_name,
+            workdir=args.workdir,
+            timeout=args.timeout,
+            notes=args.notes,
+            task_id=args.task_id,
+            metrics_file=args.metrics_file,
+        )
+        console.print(f"[green]✓[/green] Experiment enqueued: {job_file.name}")
+        console.print(f"Logs: {manager.logs_dir}")
 
     else:
         parser.print_help()

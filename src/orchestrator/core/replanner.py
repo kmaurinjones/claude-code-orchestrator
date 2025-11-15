@@ -21,10 +21,11 @@ console = Console()
 class Replanner:
     """Analyzes failed tasks and proposes follow-up remediation work."""
 
-    def __init__(self, project_root: Path, logger: EventLogger, max_tasks: int = 3):
+    def __init__(self, project_root: Path, logger: EventLogger, log_workspace: Path, max_tasks: int = 3):
         self.project_root = Path(project_root).resolve()
         self.logger = logger
         self.max_tasks = max_tasks
+        self.log_workspace = Path(log_workspace).resolve()
 
     def analyze_failure(
         self,
@@ -51,6 +52,7 @@ class Replanner:
             workspace=self.project_root,
             max_turns=12,
             model="sonnet",
+            log_workspace=self.log_workspace,
         )
 
         result = agent.execute()
