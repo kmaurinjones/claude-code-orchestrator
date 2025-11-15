@@ -43,7 +43,7 @@ class Orchestrator:
 
     def __init__(
         self,
-        workspace: Path = Path(".agentic"),
+        workspace: Path = Path(".orchestrator"),
         min_steps: int = 50,
         max_steps: int = 100,
         max_parallel_tasks: int = 1,

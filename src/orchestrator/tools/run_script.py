@@ -58,7 +58,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--log-file",
         default=None,
-        help="Optional explicit log file path. Defaults to .agentic/history/logs/<timestamp>_<run-name>.log",
+        help="Optional explicit log file path. Defaults to .orchestrator/history/logs/<timestamp>_<run-name>.log",
     )
     parser.add_argument(
         "--notes",
@@ -144,7 +144,7 @@ def _enqueue_job(
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-    workspace = Path(".agentic")
+    workspace = Path(".orchestrator")
     experiment_logger = ExperimentLogger(workspace)
 
     started = datetime.now()

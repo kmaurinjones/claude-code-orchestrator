@@ -1,27 +1,18 @@
 # Orchestrator
 
-A CLI wrapper for Claude Code that transforms how you tackle large, complex development tasks.
+CLI wrapper for Claude Code that decomposes large development projects into autonomous, iteratively-executed tasks.
 
-## The Problem
+## Overview
 
-Claude Code excels at focused tasks but struggles with large, multi-step projects. When you submit one massive prompt trying to accomplish everything, you often get:
-- Half-baked implementations
-- Incomplete features
-- Missed edge cases
-- Lost context mid-execution
+Orchestrator solves Claude Code's fundamental limitation: inability to manage large, multi-step projects in a single prompt. It acts as an intelligent project manager that:
 
-The core issue: CC lacks a mechanism to break down big goals into properly-sized chunks, track progress, and iteratively complete work.
-
-## The Solution
-
-Orchestrator acts as an intelligent layer around Claude Code that:
-- **Collects information** from users about their goals and requirements
-- **Breaks down large goals** into appropriately-sized constituent parts
-- **Iteratively acts on and completes** these parts with full context
-- **Makes intelligent decisions** about when to run files directly vs. delegating to Claude Code
-- **Maintains state** across the entire workflow
-
-Think of it as a project manager for Claude Code—turning big ambitions into completed work.
+- **Interviews** users to extract goals and constraints interactively
+- **Decomposes** goals into properly-scoped tasks with dependency graphs
+- **Executes** tasks autonomously via spawned Claude Code subagents
+- **Validates** work through Actor/Critic architectural pattern
+- **Parallelizes** independent tasks for efficiency
+- **Replans** dynamically when tasks fail
+- **Auto-documents** changes via semantic versioning and docs updates
 
 ## How It Works
 
@@ -32,171 +23,137 @@ The orchestrator implements an autonomous system that:
 - Executes independent tasks in parallel waves (configurable `max_parallel_tasks`)
 - Supports dynamic replanning and reflection
 - Captures long-running experiment history via the `run_script` tool and surfaces it in reviews
+- Implements Actor/Critic loop for code quality validation
 - Decides whether to execute code directly or delegate to CC based on task context
 
 ## Architecture
 
 ```
 orchestrator/
-  src/orchestrator/
-    models.py           # Pydantic data models
-    core/
-      orchestrator.py   # Main orchestration loop
-      subagent.py       # Claude CLI wrapper
-      logger.py         # JSONL event logging
-    planning/
-      goals.py          # GOALS.md parser
-      tasks.py          # Task dependency graph
-    cli/
-      __init__.py       # CLI entry point
-  examples/
-    simple_project/     # Test example
+├── src/orchestrator/
+│   ├── models.py                # Pydantic data models
+│   ├── core/
+│   │   ├── orchestrator.py      # Main orchestration loop
+│   │   ├── actor.py             # Task execution via subagents
+│   │   ├── critic.py            # Code quality validation
+│   │   ├── reviewer.py          # Task verification & acceptance
+│   │   ├── planner.py           # Goal decomposition
+│   │   ├── replanner.py         # Dynamic replanning on failures
+│   │   ├── subagent.py          # Claude CLI wrapper
+│   │   ├── parallel_executor.py # Parallel task execution
+│   │   ├── feedback.py          # Live user feedback system
+│   │   ├── changelog.py         # Semantic versioning
+│   │   ├── docs.py              # Auto-documentation generator
+│   │   ├── logger.py            # JSONL event logging
+│   │   ├── experiments.py       # Long-running job manager
+│   │   ├── domain_context.py    # Domain-specific guardrails
+│   │   └── ...                  # Other utilities
+│   ├── planning/
+│   │   ├── goals.py             # GOALS.md parser
+│   │   └── tasks.py             # Task dependency graph
+│   ├── tools/
+│   │   └── run_script.py        # Long-running job execution
+│   └── cli/
+│       └── __init__.py          # CLI entry point
+├── docs/                        # Comprehensive documentation
+├── example-projects/            # Real-world example workflows
+└── pyproject.toml               # Project metadata & dependencies
 ```
 
+
+## Prerequisites
+
+- Python ≥3.11
+- Claude Code CLI: `npm install -g @anthropic-ai/claude-code` (requires Claude Max subscription or local install)
 
 ## Installation
 
 ```bash
-# From the orchestrator repo root
 cd /path/to/orchestrator
-
-# Install dependencies
 uv sync
-
-# Verify Claude Code CLI is available
-claude --version
+uv run orchestrate --version  # Verify installation
 ```
 
-## Usage
+## Quick Start
 
-### Run Interview (Interactive Goal Setting)
+Three-step workflow:
 
+### 1. Interview
 ```bash
-# From your project directory
 cd /path/to/your/project
-orchestrate interview --workspace .agentic
-# If GOALS/TASKS already exist, the interview automatically continues that plan.
-# Use --fresh to force a brand new set of files: orchestrate interview --workspace .agentic --fresh
+orchestrate interview --workspace .orchestrator
 ```
+Interactively define project goals, success criteria, and constraints. Creates `GOALS.md` and `TASKS.md`.
 
-### Run Orchestrator
+**Interview options:**
+- `--workspace PATH` - Set workspace directory (default: `.orchestrator`)
+- `--update` - Update existing goals and tasks instead of starting fresh
+- `--fresh` - Ignore existing GOALS/TASKS even if they exist (restart from scratch)
 
+### 2. Run Orchestrator
 ```bash
-# From the same project directory
-cd /path/to/your/project
-orchestrate run --workspace .agentic --max-iterations 100
-# Surgical mode keeps diffs tight and limited to specific files
-# orchestrate run --workspace .agentic --surgical --surgical-path src/training/config.py
+orchestrate run --workspace .orchestrator --max-steps 100
 ```
+Autonomously executes all tasks. Parallelizes independent work, retries failures, and replans dynamically.
 
-### Test with Simple Example
+**Run options:**
+- `--workspace PATH` - Set workspace directory (default: `.orchestrator`)
+- `--max-steps N` - Set maximum iterations
+- `--max-parallel-tasks N` - Control parallelism (overrides config)
+- `--surgical` - Enable tight scope, minimal edits mode (minimal changes to existing code)
 
+### 3. Schedule Experiments (Optional)
 ```bash
-cd examples/simple_project
-./setup.sh
-python test.py
+orchestrate experiment --cmd "uv run train.py" --run-name "trial-1" --workspace .orchestrator
 ```
+Enqueue long-running jobs (training, migrations, etc.) without blocking main orchestrator loop.
 
-## Key Components
+**Experiment options:**
+- `--workspace PATH` - Set workspace directory (default: `.orchestrator`)
+- `--cmd COMMAND` - Command to execute (required)
+- `--run-name NAME` - Name recorded in experiment history
+- `--workdir PATH` - Working directory for command (default: current dir)
+- `--timeout SECONDS` - Set execution timeout
+- `--notes TEXT` - Record notes with experiment
+- `--task-id ID` - Link experiment to specific task
+- `--metrics-file PATH` - Track JSON metrics from command output
 
-### Orchestrator
+## Key Features
 
-Main loop that:
-1. Checks goal completion
-2. Selects next ready task from dependency graph
-3. Spawns subagent to execute task
-4. Updates task status based on result
-5. Periodically reflects on progress
+**Autonomous Task Execution**
+- Spawns Claude Code subagents for each task via non-interactive mode
+- Tracks full state via JSONL event logs and snapshot files
+- Retries failures with feedback from critic (code quality) and reviewer (tests)
 
-### Subagent
+**Smart Scheduling**
+- Dependency graph tracks task prerequisites
+- Parallel execution of independent work (configurable `max_parallel_tasks`)
+- Priority-based task selection
 
-Wraps Claude Code CLI invocations:
-- Uses `-p` flag for non-interactive mode
-- Passes structured instructions
-- Parses JSON responses with task results
-- Logs all events to JSONL
+**Long-Running Jobs**
+- Enqueue training, migrations, or large builds via `orchestrate experiment`
+- Executes outside Claude's time limit constraints
+- Streams logs and metrics to `.orchestrator/history/`
 
-### Event Logger
+**Quality Gates**
+- Actor/Critic loop: subagent writes code, critic enforces standards (naming, whitespace, Ruff linting)
+- Accepts existing work if tests already pass (enables resume from partial projects)
+- Task-specific verification checks (file_exists, command_passes, pattern matching)
 
-Provides full traceability:
-- Every decision, spawn, completion, error logged
-- JSONL format for easy querying
-- Trace IDs link parent/child operations
+**Replanning & Feedback**
+- Analyzes test/critic failures and spawns remediation tasks automatically
+- Live user feedback via `.orchestrator/current/USER_NOTES.md` (edit anytime during execution)
+- Domain-aware guardrails (data science, backend, frontend, tooling)
 
-### Goals Manager
-
-Parses GOALS.md to extract:
-- Core success criteria (immutable)
-- Nice-to-have features (flexible)
-- Out of scope items
-- Constraints
-
-### Task Graph
-
-NetworkX-based dependency tracking:
-- Identifies ready tasks (dependencies met)
-- Detects circular dependencies
-- Priority-based scheduling
-
-### Parallel Executor
-
-- Uses `ThreadPoolExecutor` to launch multiple Claude Code subagents concurrently
-- Honors `max_parallel_tasks` from `orchestrator.config.yaml`
-- Ensures TASKS.md writes remain atomic via locks
-- Ideal for independent workstreams (e.g., build API + scaffold frontend at once)
-
-### Long-Running Job Queue
-
-- `python -m orchestrator.tools.run_script --mode enqueue --task-id task-001` writes a job request the orchestrator executes outside Claude
-- The orchestrator monitors `.agentic/history/jobs/` to start queued commands, stream logs, and block the originating task until they finish
-- Critical for multi-hour training runs, migrations, or large builds that would exceed Claude’s time limits
-
-### Auto-Completion of Existing Work
-
-- Before invoking the actor subagent, the orchestrator runs each task’s acceptance criteria and critic checks
-- If everything already passes (common in established codebases), the task is auto-accepted without rewriting files
-- This lets you resume from partially completed projects or imported repositories without redoing their foundational setup
-
-### Replanner & Experiment History
-
-- When a task exhausts retries, the Replanner agent analyzes reviewer/test feedback and spawns remediation tasks automatically
-- Emits `REPLAN` events so you can trace why new work appeared in `TASKS.md`
-- Subagents are instructed to enqueue long commands through `python -m orchestrator.tools.run_script --mode enqueue --task-id <task>`
-- The orchestrator executes those enqueued jobs outside of Claude, waits for completion, and surfaces experiment logs/metrics under `.agentic/history/`
-- If you still want to run a quick command inline, omit `--mode enqueue` to fall back to blocking mode
-
-### Domain Context
-
-- Detects whether the project looks like data science, backend, frontend, or general tooling
-- Appends domain-specific guardrails (e.g., leakage/bias checklists for DS, performance/security notes for backend)
-- Keeps every subagent aligned with the success criteria of the domain without additional prompting
-
-### Critic (Actor/Critic Loop)
-
-- Every task now flows through an *actor* phase (subagent implementation) followed by a *critic* phase
-- The critic verifies coding standards: file naming (snake_case, no spaces), trailing whitespace/tabs, and optional Ruff linting when available
-- Findings block task completion until resolved, so existing codebases retain their conventions even during large automated refactors
-- Critic feedback is logged alongside reviewer/test results, giving future retries a clear set of corrections to apply
-
-## Claude Code CLI Requirements
-
-Requires Claude Max subscription or Claude Code CLI installed:
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
-Key flags used:
-- `-p`: Non-interactive print mode (exits after response)
-- `--output-format json`: Structured output
-- `--dangerously-skip-permissions`: No prompts (automation)
-- `--add-dir`: Additional working directories
-- `--max-turns`: Conversation length limit
+**Auto-Documentation**
+- Updates `CHANGELOG.md` with semantic versioning after each task
+- Maintains `docs/` directory (architecture, components, troubleshooting)
+- Archives failed attempts for future reference
 
 ## Workspace Structure
 
 ```
-.agentic/
+.orchestrator/
     full_history.jsonl       # Complete event log
     snapshots/               # Periodic state snapshots
     current/
@@ -214,7 +171,7 @@ Key flags used:
 The orchestrator supports live feedback during execution through `USER_NOTES.md`:
 
 **How it works:**
-1. When orchestrator starts, it creates `.agentic/current/USER_NOTES.md`
+1. When orchestrator starts, it creates `.orchestrator/current/USER_NOTES.md`
 2. Edit this file anytime during execution to provide feedback (add under the **New Notes** section)
 3. The orchestrator ingests new notes at the beginning of every iteration and before each review
 4. Consumed feedback is automatically moved to the **Previously Reviewed** section with timestamps
@@ -286,8 +243,8 @@ The orchestrator automatically maintains project documentation and a changelog:
 3. **Execute**: Spawn subagents to complete tasks
 4. **Track**: Monitor progress via TASKS.md and logs
 5. **Document**: Auto-update docs/ and CHANGELOG.md after each task
-5. **Reflect**: Periodic assessment and replanning
-6. **Complete**: All core goals achieved
+6. **Reflect**: Periodic assessment and replanning
+7. **Complete**: All core goals achieved
 
 ## Limitations
 
@@ -296,7 +253,23 @@ The orchestrator automatically maintains project documentation and a changelog:
 - 10-minute timeout per subagent
 - JSON response parsing depends on subagent following format
 
-## Development
+## Development Resources
+
+### Code Quality & Architecture
+
+The project maintains comprehensive documentation to support development:
+
+- **[refactor-analysis.md](./refactor-analysis.md)** - Complete dependency analysis and architectural structure
+  - Import dependency graphs for all 31 modules
+  - Zero circular dependencies verified
+  - Hub modules and leaf modules identification
+  - Entry points and execution paths
+  - Refactoring recommendations
+
+- **[docs/architecture.md](./docs/architecture.md)** - System design and component relationships
+- **[docs/README.md](./docs/README.md)** - Project documentation hub
+
+### Running Tests & Linting
 
 ```bash
 # Run tests
@@ -309,17 +282,14 @@ uv run ruff check src/
 uv run ruff format src/
 ```
 
+### Contributing
+
+When making architectural changes:
+1. Ensure no new circular dependencies are introduced
+2. Review the entry points in `refactor-analysis.md` before modifying CLI
+3. Consider the hub module recommendations when refactoring `core/orchestrator.py` or `core/planner.py`
+4. Keep module count and dependency graph in mind when adding new features
+
 ## License
 
 MIT
-### Schedule a Long-Running Experiment
-
-```bash
-# Enqueue a training job and capture logs/metrics under .agentic/history/
-cd /path/to/your/project
-orchestrate experiment --cmd "uv run training/xgboost_tri_clf/src/train.py --n_rows 100000" \
-    --run-name "tri-clf-calibration" --notes "30min cadence calibration sweep"
-```
-
-This uses the same job queue the orchestrator watches, so experiments run safely in the
-background while the main workflow continues.

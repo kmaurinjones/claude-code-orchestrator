@@ -7,7 +7,7 @@ from ..models import Goal, GoalTier
 
 
 class GoalsManager:
-    def __init__(self, goals_path: Path = Path(".agentic/current/GOALS.md")):
+    def __init__(self, goals_path: Path = Path(".orchestrator/current/GOALS.md")):
         self.goals_path = goals_path
         self._goals: List[Goal] = []
         if self.goals_path.exists():

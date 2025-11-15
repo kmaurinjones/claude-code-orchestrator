@@ -176,7 +176,7 @@ class MetricThresholdEvaluator(GoalEvaluator):
         # Look for metrics files
         metrics_files = list(project_root.rglob("*metrics*.json")) + \
                        list(project_root.rglob("*results*.json")) + \
-                       list(project_root.rglob(".agentic/history/**/metrics.json"))
+                       list(project_root.rglob(".orchestrator/history/**/metrics.json"))
 
         if not metrics_files:
             return EvaluationResult(

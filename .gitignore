@@ -1,6 +1,7 @@
 # Project-specific
 SCRATCH.md
 .claude/
+.orchestrator/
 example-projects/
 .ruff_cache/
 

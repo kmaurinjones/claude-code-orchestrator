@@ -19,7 +19,7 @@ def _generate_directory_tree(workspace: Path, max_depth: int = 3, max_files: int
     file_count = 0
 
     # Directories to ignore
-    ignore = {".agentic", ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
+    ignore = {".orchestrator", ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
               ".ruff_cache", "node_modules", ".next", "dist", "build", ".DS_Store"}
 
     def add_tree(path: Path, prefix: str = "", depth: int = 0):
@@ -435,8 +435,8 @@ When complete, your final message MUST include a markdown code block with JSON i
    - DO NOT put files in similar existing directories - create the exact directory structure specified
    - Create all necessary parent directories first with mkdir -p
    - Verify the full path matches the task specification before creating the file
-   - DO NOT create files in any `.agentic` subdirectory
-   - DO NOT use relative paths like `../.agentic/`
+   - DO NOT create files in any `.orchestrator` subdirectory
+   - DO NOT use relative paths like `../.orchestrator/`
    - All paths are relative to the current working directory ({self.workspace})
 
 3. **MVP-FIRST INCREMENTAL DEVELOPMENT** - Build the simplest working version first:

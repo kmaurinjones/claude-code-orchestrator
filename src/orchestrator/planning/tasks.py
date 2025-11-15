@@ -9,7 +9,7 @@ from ..models import Task, TaskStatus, VerificationCheck
 
 
 class TaskGraph:
-    def __init__(self, tasks_path: Path = Path(".agentic/current/TASKS.md")):
+    def __init__(self, tasks_path: Path = Path(".orchestrator/current/TASKS.md")):
         self.tasks_path = tasks_path
         self.graph = nx.DiGraph()
         self._tasks: Dict[str, Task] = {}

@@ -235,7 +235,7 @@ class Reviewer:
 
     def _get_experiment_history(self, limit: int = 5) -> str:
         """Summarize recent experiment runs from the history directory."""
-        history_dir = self.project_root / ".agentic" / "history"
+        history_dir = self.project_root / ".orchestrator" / "history"
         history_file = history_dir / "experiments.jsonl"
 
         if not history_file.exists():

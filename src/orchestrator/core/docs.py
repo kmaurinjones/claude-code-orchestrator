@@ -278,7 +278,7 @@ Focus on making the documentation useful for someone new to the project.
             workspace=self.project_root,
             max_turns=12,
             model="haiku",
-            log_workspace=self.project_root / ".agentic" if (self.project_root / ".agentic").exists() else self.project_root,
+            log_workspace=self.project_root / ".orchestrator" if (self.project_root / ".orchestrator").exists() else self.project_root,
         )
 
         agent.execute()

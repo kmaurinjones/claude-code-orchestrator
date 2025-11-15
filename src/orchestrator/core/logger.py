@@ -8,7 +8,7 @@ from ..models import LogEvent, EventType
 
 
 class EventLogger:
-    def __init__(self, log_path: Path = Path(".agentic/full_history.jsonl")):
+    def __init__(self, log_path: Path = Path(".orchestrator/full_history.jsonl")):
         self.log_path = log_path
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 

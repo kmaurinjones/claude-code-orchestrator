@@ -1,6 +1,6 @@
 [project]
 name = "agentic-orchestrator"
-version = "0.8.1"
+version = "0.8.2"
 description = "Self-orchestrating agentic system using Claude Code CLI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,9 @@ dev = [
 ]
 
 [project.scripts]
+orchestrate = "orchestrator.cli:main"
+
+[project.console_scripts]
 orchestrate = "orchestrator.cli:main"
 
 [tool.hatch.build.targets.wheel]

@@ -45,7 +45,7 @@ This is often an implicit limitation of using CC alone—knowing when to just ru
 - **Event logging**: JSONL-based full execution trace for auditability
 - **Task dependencies**: NetworkX-based dependency graph for proper ordering
 - **Dynamic replanning**: Reflects on progress and adjusts plan as needed
-- **State persistence**: Workspace-based state management in `.agentic/` directory
+- **State persistence**: Workspace-based state management in `.orchestrator/` directory
 
 ## Current Version
 
@@ -59,7 +59,7 @@ Recent additions:
 - Parallel task execution with `ParallelExecutor` and thread-safe TASKS.md writes
 - Automated replanning agent that converts failures into remediation tasks
 - Domain-aware context builder (DS/backend/frontend/tooling guardrails)
-- Long-running job queue: subagents enqueue heavy commands via `run_script --mode enqueue --task-id …`, the orchestrator executes them outside Claude, waits for completion, and logs results in `.agentic/history/`
+- Long-running job queue: subagents enqueue heavy commands via `run_script --mode enqueue --task-id …`, the orchestrator executes them outside Claude, waits for completion, and logs results in `.orchestrator/history/`
 - Actor/Critic loop: after the actor subagent runs, a strict Critic enforces production-readiness standards (naming, whitespace, docstrings, no bare excepts, no TODOs, no debug prints, no hardcoded secrets, no broken links, Ruff linting) acting as the final quality gate before completion
 - Completion summary: when orchestrator finishes (success/max steps/no tasks), generates domain-specific usage guide with CLI commands, configuration, and next steps
 
@@ -67,10 +67,10 @@ Recent additions:
 
 ```bash
 # Start interactive goal-setting interview
-orchestrate interview --workspace .agentic
+orchestrate interview --workspace .orchestrator
 
 # Run orchestrator with goal decomposition
-orchestrate run --workspace .agentic --max-iterations 100
+orchestrate run --workspace .orchestrator --max-iterations 100
 ```
 
 ## Development Guidelines
@@ -99,7 +99,7 @@ orchestrator/
 │   └── cli/
 │       └── __init__.py        # CLI entry point
 ├── examples/                   # Test cases
-├── .agentic/                  # Workspace directory
+├── .orchestrator/                  # Workspace directory
 └── sessions/                  # Development session logs
 ```
 
@@ -109,16 +109,16 @@ orchestrator/
 - `src/orchestrator/core/subagent.py` - Claude Code CLI wrapper
 - `src/orchestrator/core/reviewer.py` - Task review and validation
 - `src/orchestrator/core/feedback.py` - User feedback tracking system
-- `.agentic/current/GOALS.md` - Project goals in workspace
-- `.agentic/current/TASKS.md` - Task dependency graph
-- `.agentic/current/USER_NOTES.md` - Live user feedback during execution
+- `.orchestrator/current/GOALS.md` - Project goals in workspace
+- `.orchestrator/current/TASKS.md` - Task dependency graph
+- `.orchestrator/current/USER_NOTES.md` - Live user feedback during execution
 
 ## User Feedback System
 
 As of v0.5.22+, orchestrator supports live user feedback during execution:
 
 **How it works:**
-- Orchestrator creates `.agentic/current/USER_NOTES.md` at startup
+- Orchestrator creates `.orchestrator/current/USER_NOTES.md` at startup
 - Users edit this file during execution to provide feedback
 - Before each task review, orchestrator checks for new notes
 - Consumed feedback is injected into reviewer prompt and archived

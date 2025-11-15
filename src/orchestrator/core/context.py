@@ -61,7 +61,7 @@ Allowed focus areas:
   python -m orchestrator.tools.run_script --cmd "pytest -m slow" --run-name "slow-suite" --task-id "{task.id}" --mode enqueue
   ```
   This hands the job off to the orchestrator so Claude is free to continue; the orchestrator waits for completion,
-  captures logs in `.agentic/history/logs/`, and appends metrics/artifacts to `.agentic/history/experiments.jsonl`.
+  captures logs in `.orchestrator/history/logs/`, and appends metrics/artifacts to `.orchestrator/history/experiments.jsonl`.
 - Blocking commands can still use `--mode blocking` when they finish quickly. The enqueue mode is preferred for
   model training, full test suites, migrations, builds, and heavy data processing.
 

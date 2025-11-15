@@ -214,12 +214,12 @@ Return ONLY the markdown guide, no preamble."""
         if domain == "data_science":
             return f"""## Quick Start
 Run pipeline: `uv run python main.py`
-Check experiments: `cat .agentic/history/experiments.jsonl`
+Check experiments: `cat .orchestrator/history/experiments.jsonl`
 
 ## Key Files
 - Training scripts: Look for `train*.py` files
 - Notebooks: Check `.ipynb` files for exploratory analysis
-- Metrics: `.agentic/history/experiments.jsonl`
+- Metrics: `.orchestrator/history/experiments.jsonl`
 
 ## Recent Work
 {task_summary}
@@ -254,7 +254,7 @@ Run CLI: `uv run python main.py` (see README.md for options)
 
 ## Configuration
 - `pyproject.toml` for dependencies/CLI entry points
-- `.agentic/current/TASKS.md` for remaining work
+- `.orchestrator/current/TASKS.md` for remaining work
 
 ## Recent Work
 {task_summary}

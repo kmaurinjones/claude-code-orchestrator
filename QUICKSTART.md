@@ -58,8 +58,8 @@ The interview will:
 - Ask about technical constraints
 
 Then it creates:
-- `.agentic/current/GOALS.md` - Your project goals
-- `.agentic/current/TASKS.md` - Initial task breakdown
+- `.orchestrator/current/GOALS.md` - Your project goals
+- `.orchestrator/current/TASKS.md` - Initial task breakdown
 
 ### Step 2: Run
 
@@ -68,7 +68,7 @@ The orchestrator will:
 - Break them into tasks with dependencies
 - Spawn subagents to complete each task
 - Track progress in real-time
-- Log everything to `.agentic/full_history.jsonl`
+- Log everything to `.orchestrator/full_history.jsonl`
 
 ## Monitoring Progress
 
@@ -76,20 +76,20 @@ The orchestrator will:
 
 ```bash
 # From your project directory
-watch -n 2 cat .agentic/current/TASKS.md
+watch -n 2 cat .orchestrator/current/TASKS.md
 ```
 
 ### View Event Log
 
 ```bash
 # All events
-jq '.' .agentic/full_history.jsonl | less
+jq '.' .orchestrator/full_history.jsonl | less
 
 # Only errors
-jq 'select(.event=="error")' .agentic/full_history.jsonl
+jq 'select(.event=="error")' .orchestrator/full_history.jsonl
 
 # Only completions
-jq 'select(.event=="complete")' .agentic/full_history.jsonl
+jq 'select(.event=="complete")' .orchestrator/full_history.jsonl
 ```
 
 ## Options
@@ -113,7 +113,7 @@ orchestrate run --max-iterations 200
 orchestrate run --max-parallel-tasks 3
 
 # Use different workspace location
-orchestrate run --workspace /path/to/.agentic
+orchestrate run --workspace /path/to/.orchestrator
 
 # Combine options
 orchestrate run --max-iterations 200 --max-parallel-tasks 10
@@ -169,12 +169,12 @@ Run `orchestrate interview` first.
 
 Check for errors:
 ```bash
-jq 'select(.event=="error") | .payload' .agentic/full_history.jsonl
+jq 'select(.event=="error") | .payload' .orchestrator/full_history.jsonl
 ```
 
 ### Subagent fails repeatedly
 
-- Check `.agentic/full_history.jsonl` for specific errors
+- Check `.orchestrator/full_history.jsonl` for specific errors
 - Task may need to be broken into smaller pieces
 - Check `TASKS.md` for dependency issues
 
@@ -182,7 +182,7 @@ jq 'select(.event=="error") | .payload' .agentic/full_history.jsonl
 
 ```
 my-project/
-├── .agentic/
+├── .orchestrator/
 │   ├── full_history.jsonl      # Complete trace
 │   └── current/
 │       ├── GOALS.md             # Your goals
@@ -194,7 +194,7 @@ my-project/
 
 ## Advanced: Manual GOALS.md
 
-Skip interview by creating `.agentic/current/GOALS.md` manually:
+Skip interview by creating `.orchestrator/current/GOALS.md` manually:
 
 ```markdown
 # GOALS.md
@@ -228,12 +228,14 @@ Using Claude pricing (approximate):
 
 Haiku is used for task execution (cheap), Sonnet only for planning (more expensive but infrequent).
 
+We recommend using a Claude Max subscription for the best experience and to keep costs to a minimum.
+
 ## Next Steps
 
 After successful completion:
 1. Review generated code
 2. Run tests if created
-3. Check logs for insights: `.agentic/full_history.jsonl`
+3. Check logs for insights: `.orchestrator/full_history.jsonl`
 4. Iterate by adding more goals and running `orchestrate run` again
 
 ## Getting Help

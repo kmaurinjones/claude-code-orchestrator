@@ -5,6 +5,24 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2025-11-16
+
+### Added
+- **Comprehensive Refactor Analysis**: Generated `refactor-analysis.md` documenting complete codebase structure and dependency relationships
+  - Import dependency graph for all 31 modules with zero circular dependencies
+  - Entry point identification (CLI commands and main execution paths)
+  - Module categorization (hub modules, leaf modules, most imported)
+  - External dependencies enumeration
+  - Directory structure mapping with file statistics
+  - Refactoring recommendations for future code quality improvements
+
+## [0.8.2] - 2025-11-16
+
+### Changed
+- Default workspace directory renamed from `.agentic/` to `.orchestrator/` across the CLI, docs, and examples.
+- All commands, config references, and auto-generated file paths now point to `.orchestrator/...` so the tooling matches the product name.
+- Added `.orchestrator/` to `.gitignore` and migrated example projects/history directories to the new naming convention.
+
 ## [0.8.1] - 2025-11-16
 
 ### Added
@@ -27,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.8] - 2025-11-15
 
 ### Added
-- **History Recording System**: New `HistoryRecorder` persists summarized task events to `.agentic/history/tasks.jsonl`
+- **History Recording System**: New `HistoryRecorder` persists summarized task events to `.orchestrator/history/tasks.jsonl`
   - Records task status, attempts, review/critic summaries, and test results
   - Separate from full event log - focuses on task-level outcomes
   - Enables historical analysis and pattern detection across runs
@@ -66,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Domain-specific rules (DS projects allow notebooks, backend enforces API standards)
   - Updated `Critic.__init__()` signature requires workspace parameter
 - **Reviewer Integration**: Log workspace now required parameter
-  - Enables reviewer to write analysis artifacts to `.agentic/` directory
+  - Enables reviewer to write analysis artifacts to `.orchestrator/` directory
   - Supports future reviewer self-improvement features
 - **Replanner Integration**: Log workspace now required parameter
   - Consistent with reviewer changes
@@ -76,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Clearer user instructions to "continue the plan" vs restart
   - Reduces accidental plan overwriting
 - **Subagent Execution**: `log_workspace` parameter now standard
-  - All subagents log to `.agentic/logs/subagents/` directory
+  - All subagents log to `.orchestrator/logs/subagents/` directory
   - Consistent workspace handling across orchestrator
 - **Task Recording**: Now captures full history snapshot on completion/failure
   - `_log_task_history_event()` called after every task outcome
@@ -133,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Long-Running Job Queue**: Subagents can enqueue multi-hour commands via `run_script --mode enqueue --task-id <task>`
   - New `LongRunningJobManager` executes queued jobs outside Claude to free up subagent capacity
-  - Jobs stream logs to `.agentic/history/logs/` and append experiment metadata to `experiments.jsonl`
+  - Jobs stream logs to `.orchestrator/history/logs/` and append experiment metadata to `experiments.jsonl`
   - Orchestrator blocks task review until all task-linked jobs complete
   - Queue management: `process_queue()`, `poll()`, `wait_for_task_jobs(task_id)` APIs
 - **Actor/Critic Loop**: Task completion now requires passing both functional review AND coding standards check
@@ -156,14 +174,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.0] - 2025-11-13
 
 ### Added
-- **User Feedback System**: Live feedback during execution via `.agentic/current/USER_NOTES.md` with section-based parsing and automatic archiving
+- **User Feedback System**: Live feedback during execution via `.orchestrator/current/USER_NOTES.md` with section-based parsing and automatic archiving
 - **Automatic Documentation**: Maintains `docs/` directory with architecture, components, scripts, API, and troubleshooting documentation
 - **Automatic Changelog**: Semantic versioning with auto-increment based on change type (Added/Changed/Fixed/Removed/Attempted)
 - **Goal Evaluator System**: Data-driven goal completion with pluggable adapters (TestSuiteEvaluator, MetricThresholdEvaluator, APIContractEvaluator)
 - **Rich Validators**: Extended verification checks from 3 to 9 types (HTTP endpoints, metric thresholds, JSON schema, security scans, type checks, data quality)
 - **Parallel Task Execution**: Concurrent execution of independent tasks via `ParallelExecutor` with thread-safe state management
 - **Automated Replanning**: Failed tasks trigger `Replanner` agent that generates remediation tasks instead of blind retries
-- **Experiment History Integration**: Reviewer context includes recent experiment runs from `.agentic/history/experiments.jsonl`
+- **Experiment History Integration**: Reviewer context includes recent experiment runs from `.orchestrator/history/experiments.jsonl`
 - **Domain-Specific Context**: Detects project type (DS/backend/frontend/tooling) and injects tailored guardrails into subagent prompts
 
 ### Changed
@@ -194,7 +212,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Operator Notes Integration**: `NOTES.md` is now auto-created and surfaced to every subagent and reviewer so human guidance is always front and centre
-- **Script Runner Tool**: `python -m orchestrator.tools.run_script` executes long jobs, captures logs, applies timeouts, and records runs in `.agentic/history/experiments.jsonl`
+- **Script Runner Tool**: `python -m orchestrator.tools.run_script` executes long jobs, captures logs, applies timeouts, and records runs in `.orchestrator/history/experiments.jsonl`
 - **Experiment Logger**: Lightweight experiment registry stores command metadata, metrics, and artifact paths for later comparison
 
 ### Changed
@@ -266,7 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Detailed Subagent Execution Logging**: Complete visibility into subagent operations
-  - New `.agentic/logs/subagents/{trace_id}.json` files created for each subagent execution
+  - New `.orchestrator/logs/subagents/{trace_id}.json` files created for each subagent execution
   - Each log contains:
     - Full instruction/prompt sent to Claude Code CLI
     - Complete raw stdout and stderr from execution
@@ -281,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Details
 - **New Method**: `_log_detailed_execution()` in `Subagent` class
-- **Log Location**: `.agentic/logs/subagents/` directory (auto-created)
+- **Log Location**: `.orchestrator/logs/subagents/` directory (auto-created)
 - **Log Format**: Pretty-printed JSON for easy inspection
 - **Timing**: Execution duration tracked from start to completion
 - **Coverage**: Logs created for:
@@ -389,7 +407,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Integrated into every subagent instruction prompt
   - Shows current project structure up to 3 levels deep
   - Helps subagents understand where to create files in nested paths
-  - Ignores common directories: .agentic, .git, .venv, __pycache__, node_modules, etc.
+  - Ignores common directories: .orchestrator, .git, .venv, __pycache__, node_modules, etc.
   - Limited to 50 files to prevent token bloat
 
 ### Changed
@@ -413,7 +431,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rule 2 changed from generic "CREATE ALL FILES HERE" to specific "FILE CREATION RULES"
   - Explicit instruction to create necessary parent directories first
   - Clear examples of full path creation (e.g., src/module/file.py)
-  - Maintains prohibition on creating files in .agentic subdirectories
+  - Maintains prohibition on creating files in .orchestrator subdirectories
 
 ## [0.5.4] - 2025-10-27
 
@@ -510,7 +528,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated config schema: `min_steps`, `max_steps` fields
 
 ### Fixed
-- Workspace path resolution: Files now correctly created in project root, not `.agentic/`
+- Workspace path resolution: Files now correctly created in project root, not `.orchestrator/`
 - Path handling uses absolute paths throughout
 
 ## [0.4.6] - 2025-10-26

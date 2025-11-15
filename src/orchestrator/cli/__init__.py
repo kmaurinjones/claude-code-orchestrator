@@ -22,13 +22,13 @@ def main():
 
     # Interview command
     interview_parser = subparsers.add_parser("interview", help="Start project with interview")
-    interview_parser.add_argument("--workspace", type=Path, default=Path(".agentic"))
+    interview_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
     interview_parser.add_argument("--update", action="store_true", help="Update existing goals and tasks instead of starting fresh")
     interview_parser.add_argument("--fresh", action="store_true", help="Ignore existing GOALS/TASKS even if they exist")
 
     # Run command
     run_parser = subparsers.add_parser("run", help="Run orchestrator")
-    run_parser.add_argument("--workspace", type=Path, default=Path(".agentic"))
+    run_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
     run_parser.add_argument("--min-steps", type=int, default=None, help="Minimum iterations (overrides config)")
     run_parser.add_argument("--max-steps", type=int, default=None, help="Maximum iterations (overrides config)")
     run_parser.add_argument("--max-parallel-tasks", type=int, default=None, help="Maximum number of tasks to run in parallel (overrides config)")
@@ -43,7 +43,7 @@ def main():
 
     # Experiment command
     experiment_parser = subparsers.add_parser("experiment", help="Schedule a long-running experiment")
-    experiment_parser.add_argument("--workspace", type=Path, default=Path(".agentic"))
+    experiment_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
     experiment_parser.add_argument("--cmd", required=True, help="Command to execute")
     experiment_parser.add_argument("--run-name", default=None, help="Name recorded in experiment history")
     experiment_parser.add_argument("--workdir", type=Path, default=Path("."), help="Working directory for the command")
@@ -120,7 +120,7 @@ Conduct an interactive discussion with the user to understand what they want to 
 - Modify priorities or dependencies
 - Adjust constraints
 
-After gathering all amendments, UPDATE the TWO files (.agentic/current/GOALS.md and .agentic/current/TASKS.md) with the changes while preserving the format. Treat the existing content as the baseline and continue the plan rather than restarting from scratch.
+After gathering all amendments, UPDATE the TWO files (.orchestrator/current/GOALS.md and .orchestrator/current/TASKS.md) with the changes while preserving the format. Treat the existing content as the baseline and continue the plan rather than restarting from scratch.
 
 IMPORTANT: All tasks in TASKS.md must have (priority: X) where X is 1-10, with 10 being highest priority.
 
@@ -146,7 +146,7 @@ Ask the user questions to establish:
 
 After gathering all information, create TWO files:
 
-1. Create .agentic/current/GOALS.md with this EXACT format:
+1. Create .orchestrator/current/GOALS.md with this EXACT format:
 
 # GOALS.md
 Generated: [current timestamp]
@@ -174,7 +174,7 @@ Generated: [current timestamp]
 - [Constraint 1]
 - [Constraint 2]
 
-2. Create .agentic/current/TASKS.md with initial structure:
+2. Create .orchestrator/current/TASKS.md with initial structure:
 
 # TASKS.md
 
@@ -273,10 +273,10 @@ Start the interview now.
             console.print("\n[green]✓ All core goals achieved![/green]")
         elif result == "NO_TASKS_AVAILABLE":
             console.print("\n[yellow]⚠ No tasks available to execute[/yellow]")
-            console.print("Check .agentic/current/TASKS.md")
+            console.print("Check .orchestrator/current/TASKS.md")
         elif result == "MAX_ITERATIONS_REACHED":
             console.print(f"\n[yellow]⚠ Reached max iterations ({max_steps})[/yellow]")
-            console.print("Some goals may not be complete. Check .agentic/current/TASKS.md")
+            console.print("Some goals may not be complete. Check .orchestrator/current/TASKS.md")
 
         console.print(f"\nEvent log: {args.workspace / 'full_history.jsonl'}")
 

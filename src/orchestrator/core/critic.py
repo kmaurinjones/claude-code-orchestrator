@@ -250,7 +250,7 @@ class Critic:
             experiments_file = self.workspace / "history" / "experiments.jsonl"
             if not experiments_file.exists() or not experiments_file.read_text(encoding="utf-8").strip():
                 findings.append(
-                    "No recorded experiments in .agentic/history/experiments.jsonl. "
+                    "No recorded experiments in .orchestrator/history/experiments.jsonl. "
                     "Run `orchestrate experiment` or log calibration runs before finalizing."
                 )
         return findings

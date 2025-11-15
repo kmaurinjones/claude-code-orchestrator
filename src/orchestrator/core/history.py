@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 
 class HistoryRecorder:
-    """Persists summarized task information under .agentic/history/."""
+    """Persists summarized task information under .orchestrator/history/."""
 
     def __init__(self, workspace: Path):
         self.workspace = Path(workspace).resolve()
