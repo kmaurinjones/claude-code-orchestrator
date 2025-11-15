@@ -10,6 +10,7 @@ from datetime import datetime
 from rich.console import Console
 
 from ..models import Task, TaskStatus
+from .contracts import PlanDecision
 
 console = Console()
 
@@ -20,14 +21,14 @@ def _timestamp() -> str:
 
 
 class ParallelExecutor:
-    """Executes multiple tasks concurrently."""
+    """Executes planner decisions concurrently."""
 
     def __init__(self, max_parallel: int = 3):
         self.max_parallel = max_parallel
 
-    def execute_tasks_parallel(
+    def execute(
         self,
-        tasks: List[Task],
+        decisions: List[PlanDecision],
         process_func: callable,
     ) -> Dict[str, Any]:
         """
@@ -40,15 +41,15 @@ class ParallelExecutor:
         Returns:
             Dict with execution summary
         """
-        if not tasks:
+        if not decisions:
             return {"completed": 0, "failed": 0, "tasks": []}
 
         # Limit to max_parallel
-        tasks_to_run = tasks[:self.max_parallel]
+        decisions_to_run = decisions[:self.max_parallel]
 
         console.print(
             f"[cyan]{_timestamp()} [PARALLEL][/cyan] "
-            f"Executing {len(tasks_to_run)} tasks concurrently"
+            f"Executing {len(decisions_to_run)} tasks concurrently"
         )
 
         completed = []
@@ -58,35 +59,38 @@ class ParallelExecutor:
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_parallel) as executor:
             # Submit all tasks
             future_to_task = {
-                executor.submit(process_func, task): task
-                for task in tasks_to_run
+                executor.submit(process_func, decision): decision
+                for decision in decisions_to_run
             }
 
             # Wait for completion
             for future in concurrent.futures.as_completed(future_to_task):
-                task = future_to_task[future]
+                decision = future_to_task[future]
+                task = decision.task
 
                 try:
                     future.result()  # Will raise if process_func raised
 
-                    if task.status == TaskStatus.COMPLETE:
-                        completed.append(task.id)
+                    task_id = task.id if task else decision.decision_id
+                    if task and task.status == TaskStatus.COMPLETE:
+                        completed.append(task_id)
                         console.print(
                             f"[green]{_timestamp()} [PARALLEL][/green] "
-                            f"✓ {task.id} completed"
+                            f"✓ {task_id} completed"
                         )
                     else:
-                        failed.append(task.id)
+                        failed.append(task_id)
                         console.print(
                             f"[red]{_timestamp()} [PARALLEL][/red] "
-                            f"✗ {task.id} failed"
+                            f"✗ {task_id} failed"
                         )
 
                 except Exception as e:
-                    failed.append(task.id)
+                    task_id = task.id if task else decision.decision_id
+                    failed.append(task_id)
                     console.print(
                         f"[red]{_timestamp()} [PARALLEL][/red] "
-                        f"✗ {task.id} raised exception: {str(e)[:100]}"
+                        f"✗ {task_id} raised exception: {str(e)[:100]}"
                     )
 
         return {

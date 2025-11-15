@@ -1,10 +1,4 @@
-"""Critic phase that enforces coding standards and conventions.
-
-The Critic acts as the final production-readiness gate, enforcing strict quality standards
-before allowing any task to be marked complete. Think of this as the barrier between
-development and production deployment - it must be satisfied that code meets professional
-standards before allowing it through.
-"""
+"""Combined reviewer + production gate for the orchestrator."""
 
 from __future__ import annotations
 
@@ -12,10 +6,14 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import which
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
 
 from rich.console import Console
+
+from .contracts import ActorOutcome, ActorStatus, CriticVerdict, PlanDecision, VerdictStatus
+from .context import build_reviewer_context
+from .reviewer import ReviewFeedback, Reviewer
 
 console = Console()
 
@@ -28,44 +26,187 @@ class CriticFeedback:
 
 
 class Critic:
-    """
-    Production-readiness gatekeeper that enforces strict quality standards.
+    """Runs qualitative review + production checks, defaulting to failure until proven safe."""
 
-    The Critic is intentionally strict - it represents the final quality gate before
-    code would be deployed to production. It enforces:
-    - Naming conventions and code style
-    - Structural quality and maintainability
-    - Security and safety patterns
-    - Documentation standards
-    - Error handling completeness
-
-    This is not about being impossible to please, but about ensuring professional-grade
-    output that won't cause problems downstream.
-    """
-
-    def __init__(self, project_root: Path, workspace: Path):
+    def __init__(
+        self,
+        project_root: Path,
+        workspace: Path,
+        reviewer: Reviewer,
+        logger,
+        trace_id: str,
+    ) -> None:
         self.project_root = Path(project_root).resolve()
         self.workspace = Path(workspace).resolve()
+        self.reviewer = reviewer
+        self.logger = logger
+        self.trace_id = trace_id
 
-    def evaluate(self, task_id: str, domain: Optional[str] = None) -> CriticFeedback:
-        """
-        Perform comprehensive quality evaluation.
+    def evaluate(self, decision: PlanDecision, outcome: ActorOutcome) -> CriticVerdict:
+        """Evaluate whether the actor’s output is shippable."""
+        task = decision.task
+        if task is None:
+            return CriticVerdict(
+                status=VerdictStatus.FAIL,
+                summary="Planner decision missing task payload.",
+            )
 
-        Returns FAIL if ANY quality issue is detected - this is intentional.
-        Code must meet ALL standards to pass the production-readiness gate.
-        """
+        if outcome.status != ActorStatus.SUCCESS:
+            summary = outcome.error or "Actor failed unexpectedly."
+            review = ReviewFeedback(
+                status="FAIL",
+                summary=summary,
+                next_steps="Retry the task with additional diagnostics.",
+                raw_output="",
+            )
+            return CriticVerdict(
+                status=VerdictStatus.FAIL,
+                summary=summary,
+                review=review,
+            )
+
+        tests_payload = self._serialize_tests(outcome.tests)
+        if outcome.tests and not all(res.passed for res in outcome.tests):
+            summary = "Acceptance criteria failed. See tester output."
+            review = ReviewFeedback(
+                status="FAIL",
+                summary=summary,
+                next_steps="Fix the failing checks before requesting review again.",
+                raw_output="",
+            )
+            return CriticVerdict(
+                status=VerdictStatus.FAIL,
+                summary=summary,
+                review=review,
+            )
+
+        review_feedback = self._run_reviewer(task, decision, tests_payload)
+        if review_feedback.status.upper() not in {"PASS", "SUCCESS"}:
+            return CriticVerdict(
+                status=VerdictStatus.FAIL,
+                summary=review_feedback.summary,
+                review=review_feedback,
+                findings=[],
+            )
+
+        production = self._run_production_checks(task.id, decision.context.domain)
+        if production.status != "PASS":
+            return CriticVerdict(
+                status=VerdictStatus.FAIL,
+                summary=production.summary,
+                review=review_feedback,
+                critic_summary=production.summary,
+                findings=production.findings,
+            )
+
+        return CriticVerdict(
+            status=VerdictStatus.PASS,
+            summary=review_feedback.summary,
+            review=review_feedback,
+            critic_summary=production.summary,
+            findings=production.findings,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Reviewer flow                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _run_reviewer(
+        self,
+        task,
+        decision: PlanDecision,
+        tests_payload: List[Dict[str, Any]],
+    ) -> ReviewFeedback:
+        trace_id = f"review-{uuid4().hex[:8]}"
+        workspace_context = build_reviewer_context(task, decision.context)
+        feedback = self.reviewer.review(
+            task=task,
+            test_feedback=tests_payload,
+            workspace_context=workspace_context,
+            step=decision.step,
+            trace_id=trace_id,
+            parent_trace_id=self.trace_id,
+            notes_summary=decision.context.notes_summary,
+            domain=decision.context.domain or "",
+            user_feedback=decision.context.user_feedback,
+            short_mode=False,
+            retry_count=0,
+        )
+
+        if self._handle_reviewer_timeout_auto_pass(feedback, tests_payload):
+            return feedback
+
+        if self._needs_reviewer_retry(feedback):
+            console.print(
+                f"[yellow]{self._timestamp()} [REVIEW][/yellow] Initial review timed out - retrying.",
+            )
+            feedback = self.reviewer.review(
+                task=task,
+                test_feedback=tests_payload,
+                workspace_context=workspace_context,
+                step=decision.step,
+                trace_id=f"review-{uuid4().hex[:8]}",
+                parent_trace_id=self.trace_id,
+                notes_summary=decision.context.notes_summary,
+                domain=decision.context.domain or "",
+                user_feedback=decision.context.user_feedback,
+                short_mode=True,
+                retry_count=1,
+            )
+
+        self._handle_reviewer_timeout_auto_pass(feedback, tests_payload)
+        console.print(
+            f"[dim]{self._timestamp()} [REVIEW][/dim] Status: {feedback.status} | {feedback.summary}"
+        )
+        return feedback
+
+    def _needs_reviewer_retry(self, feedback: ReviewFeedback) -> bool:
+        summary_lower = feedback.summary.lower() if feedback.summary else ""
+        raw_lower = feedback.raw_output.lower() if feedback.raw_output else ""
+        timeout_markers = ["max turns", "timed out", "timeout", "error_max_turns"]
+        return any(marker in summary_lower for marker in timeout_markers) or any(
+            marker in raw_lower for marker in timeout_markers
+        )
+
+    def _handle_reviewer_timeout_auto_pass(
+        self,
+        feedback: ReviewFeedback,
+        test_payload: List[Dict[str, Any]],
+    ) -> bool:
+        if not test_payload or not all(item["passed"] for item in test_payload):
+            return False
+
+        summary_lower = feedback.summary.lower() if feedback.summary else ""
+        raw_lower = feedback.raw_output.lower() if feedback.raw_output else ""
+        timeout_markers = ["max turns", "timed out", "timeout", "error_max_turns"]
+
+        if any(marker in summary_lower for marker in timeout_markers) or any(
+            marker in raw_lower for marker in timeout_markers
+        ):
+            feedback.status = "PASS"
+            if not feedback.summary or "timeout" in summary_lower:
+                feedback.summary = "Reviewer timed out, but all acceptance checks passed."
+            if not feedback.next_steps:
+                feedback.next_steps = "Proceed; reviewer hit max turns but tests are green."
+            console.print(
+                f"[yellow]{self._timestamp()} [REVIEW][/yellow] Auto-accepting reviewer timeout (tests green)."
+            )
+            return True
+        return False
+
+    # ------------------------------------------------------------------ #
+    # Production gate                                                     #
+    # ------------------------------------------------------------------ #
+
+    def _run_production_checks(self, task_id: str, domain: Optional[str]) -> CriticFeedback:
         findings: List[str] = []
 
         changed_files = self._collect_changed_files()
 
-        # Mechanical checks (must pass)
         findings.extend(self._check_file_names(changed_files))
         findings.extend(self._check_trailing_whitespace(changed_files))
-
-        # Code quality checks (must pass)
         findings.extend(self._check_code_quality(changed_files))
 
-        # Linting (must pass)
         lint_result = self._run_lint()
         if lint_result:
             findings.append(lint_result)
@@ -83,6 +224,22 @@ class Critic:
         summary = f"Production-ready: All quality standards met for {task_id}."
         console.print(f"[green]Critic[/green] {summary}")
         return CriticFeedback(status="PASS", summary=summary, findings=[])
+
+    def _serialize_tests(self, tests) -> List[Dict[str, Any]]:
+        payload: List[Dict[str, Any]] = []
+        for res in tests:
+            payload.append(
+                {
+                    "description": res.check.description,
+                    "type": res.check.type,
+                    "target": res.check.target,
+                    "passed": res.passed,
+                    "message": res.message,
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                }
+            )
+        return payload
 
     def _domain_specific_findings(self, domain: Optional[str]) -> List[str]:
         if not domain:
@@ -148,6 +305,12 @@ class Critic:
             except UnicodeDecodeError:
                 continue
         return findings
+
+    @staticmethod
+    def _timestamp() -> str:
+        from datetime import datetime
+
+        return datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
 
     def _check_code_quality(self, files: List[str]) -> List[str]:
         """

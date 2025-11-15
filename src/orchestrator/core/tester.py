@@ -6,7 +6,7 @@ import subprocess
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..models import VerificationCheck, Task
 
@@ -40,6 +40,14 @@ class Tester:
                 results.append(self._check_file_exists(check))
             elif check.type == "pattern_in_file":
                 results.append(self._check_pattern_in_file(check))
+            elif check.type == "pattern_count":
+                results.append(self._check_pattern_count(check))
+            elif check.type == "file_word_count":
+                results.append(self._check_file_word_count(check))
+            elif check.type == "section_word_count":
+                results.append(self._check_section_word_count(check))
+            elif check.type == "no_placeholder_text":
+                results.append(self._check_no_placeholder(check))
             # Rich validator check types
             elif check.type == "http_endpoint":
                 results.append(self._check_http_endpoint(check))
@@ -131,11 +139,20 @@ class Tester:
         try:
             content = file_path.read_text()
             pattern = check.expected or check.description
-            if pattern and re.search(pattern, content):
+            if not pattern:
+                return TestResult(
+                    check=check,
+                    passed=False,
+                    message=f"No pattern defined for {check.description}",
+                )
+
+            matches = self._find_pattern_matches(pattern, content, check.metadata)
+            min_matches = check.metadata.get("min_matches", 1) if check.metadata else 1
+            if matches >= min_matches:
                 return TestResult(
                     check=check,
                     passed=True,
-                    message=f"Pattern found in {check.target}",
+                    message=f"Pattern found ({matches} match{'es' if matches != 1 else ''}) in {check.target}",
                 )
 
             return TestResult(
@@ -149,6 +166,239 @@ class Tester:
                 passed=False,
                 message=f"Error reading file {check.target}: {exc}",
             )
+
+    def _check_pattern_count(self, check: VerificationCheck) -> TestResult:
+        """Ensure a pattern appears a specified number of times."""
+        file_path = self.workspace / check.target
+        if not file_path.exists():
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"File not found: {check.target}",
+            )
+
+        try:
+            content = file_path.read_text()
+            pattern = check.expected or check.description
+            if not pattern:
+                return TestResult(
+                    check=check,
+                    passed=False,
+                    message=f"No pattern defined for {check.description}",
+                )
+
+            matches = self._find_pattern_matches(pattern, content, check.metadata)
+            metadata = check.metadata or {}
+            min_count = metadata.get("min_count", 1)
+            max_count = metadata.get("max_count")
+
+            if matches < min_count:
+                return TestResult(
+                    check=check,
+                    passed=False,
+                    message=f"Pattern found {matches} time(s); expected at least {min_count}.",
+                )
+            if max_count is not None and matches > max_count:
+                return TestResult(
+                    check=check,
+                    passed=False,
+                    message=f"Pattern found {matches} time(s); expected no more than {max_count}.",
+                )
+
+            return TestResult(
+                check=check,
+                passed=True,
+                message=f"Pattern count within bounds ({matches}).",
+            )
+        except Exception as exc:
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Error reading file {check.target}: {exc}",
+            )
+
+    def _check_file_word_count(self, check: VerificationCheck) -> TestResult:
+        """Verify entire file word count."""
+        file_path = self.workspace / check.target
+        if not file_path.exists():
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"File not found: {check.target}",
+            )
+
+        metadata = check.metadata or {}
+        min_words = metadata.get("min_words")
+        max_words = metadata.get("max_words")
+
+        if min_words is None and max_words is None:
+            return TestResult(
+                check=check,
+                passed=False,
+                message="file_word_count requires min_words and/or max_words metadata.",
+            )
+
+        try:
+            content = file_path.read_text()
+            count = self._count_words(content)
+        except Exception as exc:
+            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+
+        if min_words is not None and count < int(min_words):
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Word count {count} < minimum {min_words}",
+            )
+        if max_words is not None and count > int(max_words):
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Word count {count} > maximum {max_words}",
+            )
+
+        return TestResult(
+            check=check,
+            passed=True,
+            message=f"Word count {count} within expected range.",
+        )
+
+    def _check_section_word_count(self, check: VerificationCheck) -> TestResult:
+        """Verify the word count of a specific markdown section."""
+        file_path = self.workspace / check.target
+        if not file_path.exists():
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"File not found: {check.target}",
+            )
+
+        metadata = check.metadata or {}
+        heading = metadata.get("section_heading")
+        if not heading:
+            return TestResult(
+                check=check,
+                passed=False,
+                message="section_word_count requires 'section_heading' metadata.",
+            )
+
+        min_words = metadata.get("min_words")
+        max_words = metadata.get("max_words")
+        if min_words is None and max_words is None:
+            return TestResult(
+                check=check,
+                passed=False,
+                message="section_word_count requires min_words and/or max_words metadata.",
+            )
+
+        try:
+            content = file_path.read_text()
+        except Exception as exc:
+            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+
+        section_text = self._extract_section(content, heading, metadata.get("next_heading_pattern"))
+        if section_text is None:
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Section heading '{heading}' not found in {check.target}",
+            )
+
+        count = self._count_words(section_text)
+        if min_words is not None and count < int(min_words):
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Section '{heading}' word count {count} < minimum {min_words}",
+            )
+        if max_words is not None and count > int(max_words):
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Section '{heading}' word count {count} > maximum {max_words}",
+            )
+
+        return TestResult(
+            check=check,
+            passed=True,
+            message=f"Section '{heading}' word count {count} within range.",
+        )
+
+    def _check_no_placeholder(self, check: VerificationCheck) -> TestResult:
+        """Ensure placeholder text has been removed."""
+        file_path = self.workspace / check.target
+        if not file_path.exists():
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"File not found: {check.target}",
+            )
+
+        metadata = check.metadata or {}
+        phrases = metadata.get("phrases")
+        if not phrases:
+            return TestResult(
+                check=check,
+                passed=False,
+                message="no_placeholder_text requires 'phrases' metadata.",
+            )
+
+        case_insensitive = metadata.get("case_insensitive", True)
+
+        try:
+            content = file_path.read_text()
+        except Exception as exc:
+            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+
+        offending = []
+        for phrase in phrases:
+            if case_insensitive:
+                if phrase.lower() in content.lower():
+                    offending.append(phrase)
+            else:
+                if phrase in content:
+                    offending.append(phrase)
+
+        if offending:
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Placeholder text present: {', '.join(offending)}",
+            )
+
+        return TestResult(
+            check=check,
+            passed=True,
+            message="No placeholder text detected.",
+        )
+
+    def _find_pattern_matches(self, pattern: str, content: str, metadata: Optional[Dict[str, Any]]) -> int:
+        """Return number of regex matches honoring optional flags."""
+        flags = re.MULTILINE
+        if metadata and metadata.get("case_insensitive"):
+            flags |= re.IGNORECASE
+        regex = re.compile(pattern, flags)
+        return len(list(regex.finditer(content)))
+
+    @staticmethod
+    def _count_words(text: str) -> int:
+        return len(text.split())
+
+    @staticmethod
+    def _extract_section(content: str, heading: str, next_heading_pattern: Optional[str]) -> Optional[str]:
+        """Return markdown section text following heading until the next peer heading."""
+        pattern = re.compile(rf"^{re.escape(heading)}\s*$", re.MULTILINE)
+        match = pattern.search(content)
+        if not match:
+            return None
+
+        start = match.end()
+        remainder = content[start:]
+        next_pattern = re.compile(next_heading_pattern, re.MULTILINE) if next_heading_pattern else re.compile(r"^##\s", re.MULTILINE)
+        next_match = next_pattern.search(remainder)
+        if next_match:
+            return remainder[: next_match.start()].strip()
+        return remainder.strip()
 
     def _check_http_endpoint(self, check: VerificationCheck) -> TestResult:
         """Check HTTP endpoint using validator."""

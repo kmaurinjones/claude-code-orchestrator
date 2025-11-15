@@ -5,6 +5,25 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2025-11-16
+
+### Added
+- **Flexible Acceptance Checks**: `pattern_in_file` now honors metadata-driven flags for case-insensitive regex and minimum match counts to avoid brittle false failures.
+- **New Verification Types**: Added `pattern_count`, `file_word_count`, `section_word_count`, and `no_placeholder_text` check types so plans can enforce word-count ranges, heading-scoped budgets, and placeholder removal directly from TASKS.md.
+
+### Changed
+- **Tester Enhancements**: All new verifiers run inside the existing tester/critic pipeline, producing deterministic results before reviews and ensuring future runs report accurate status for market-prediction, introduction, and roadmap tasks.
+
+## [0.8.0] - 2025-11-16
+
+### Added
+- **Planner/Actor/Critic Contracts**: Introduced shared dataclasses (`PlanDecision`, `ActorOutcome`, `CriticVerdict`) plus dedicated context builders so every stage shares consistent metadata and operator guidance.
+- **Actor + Planner Components**: New `core/actor.py`, `core/planner.py`, and prompt helpers encapsulate task execution, deterministic testing, docs/changelog updates, and remediation planning.
+
+### Changed
+- **Loop Architecture**: The orchestrator now runs an explicit planner → actor → critic loop; reviewer duties moved under the critic, and planner owns feedback ingestion, task state, and doc/changelog updates.
+- **Parallel Executor**: Updated to execute planner decisions (not raw tasks) so concurrency works with the new abstractions.
+
 ## [0.7.8] - 2025-11-15
 
 ### Added
