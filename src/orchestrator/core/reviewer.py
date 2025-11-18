@@ -63,6 +63,12 @@ def _build_reviewer_task_description(
         else ""
     )
 
+    acceptance_overview = (
+        "\n".join(f"- {check.description}" for check in task.acceptance_criteria[:4])
+        or "- None"
+    )
+    acceptance_overflow_note = "\n- ..." if len(task.acceptance_criteria) > 4 else ""
+
     # Build user feedback section
     user_feedback_section = "No user feedback provided."
     if user_feedback:
@@ -103,8 +109,7 @@ def _build_reviewer_task_description(
 {_domain_reviewer_focus(domain)}
 
 ## Acceptance Criteria
-{chr(10).join(f'- {check.description}' for check in task.acceptance_criteria[:4]) or '- None'}
-{"\n- ..." if len(task.acceptance_criteria) > 4 else ''}
+{acceptance_overview}{acceptance_overflow_note}
 
 ## Automated Test Results
 {tests_section}

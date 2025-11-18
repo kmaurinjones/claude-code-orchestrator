@@ -23,7 +23,7 @@ def _timestamp() -> str:
 class ParallelExecutor:
     """Executes planner decisions concurrently."""
 
-    def __init__(self, max_parallel: int = 3):
+    def __init__(self, max_parallel: int = 1):
         self.max_parallel = max_parallel
 
     def execute(

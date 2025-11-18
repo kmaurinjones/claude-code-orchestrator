@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from enum import Enum
 
+TASK_ID_PATTERN = re.compile(r'\btask-\d+\b', re.IGNORECASE)
+
 
 class ChangeType(str, Enum):
     """Types of changes that can be logged."""
@@ -109,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         if not self.changelog_file.exists():
             self.initialize()
 
+        self._ensure_human_description(description)
+
         # Auto-determine bump type if not provided
         if bump_type is None:
             bump_type = self._infer_bump_type(change_type)
@@ -181,6 +185,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
         content = self.changelog_file.read_text()
 
+        self._ensure_human_description(description)
+
         # Use description as-is without task_id suffix
         formatted_desc = description
 
@@ -216,6 +222,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         # Reconstruct content
         updated_content = content[:version_start] + version_content + content[version_end:]
         self.changelog_file.write_text(updated_content)
+
+    def _ensure_human_description(self, description: str) -> None:
+        """Prevent changelog entries from referencing ephemeral task IDs."""
+        if description and TASK_ID_PATTERN.search(description):
+            raise ValueError(
+                "Changelog entries must not reference ephemeral task IDs like 'task-001'. "
+                "Describe the user-facing change instead."
+            )
 
     def _infer_bump_type(self, change_type: ChangeType) -> VersionBump:
         """Infer semantic version bump from change type."""

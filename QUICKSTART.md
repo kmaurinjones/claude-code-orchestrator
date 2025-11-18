@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-cd /Users/kmaurinjones/Documents/projects/github-repos/orchestrator
+cd /Users/kmaurinjones/Documents/projects/github-repos/claude-code-orchestrator
 uv tool install .
 ```
 
@@ -109,7 +109,7 @@ This loads your current GOALS.md and TASKS.md and lets you make amendments inter
 # Increase max iterations (default 100)
 orchestrate run --max-iterations 200
 
-# Adjust parallel task execution (default 5)
+# Adjust parallel task execution (default 1)
 orchestrate run --max-parallel-tasks 3
 
 # Use different workspace location
@@ -252,5 +252,5 @@ orchestrate run --help
 ## Uninstall
 
 ```bash
-uv tool uninstall agentic-orchestrator
+uv tool uninstall claude-code-orchestrator
 ```

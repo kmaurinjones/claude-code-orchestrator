@@ -5,6 +5,18 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2025-11-17
+
+### Changed
+- **Changelog Hygiene Enforcement**: CLI docs/instructions now explicitly forbid including `task-###` identifiers in CHANGELOG entries, and `ChangelogManager` raises if descriptions contain them to keep logs human-meaningful long-term.
+
+## [0.8.4] - 2025-11-17
+
+### Changed
+- **Default Parallelization**: Reduced default `max_parallel_tasks` from 3 to 1 to favor sequential execution during active development
+  - Updated config defaults, CLI parallel executor, and documentation to reflect the sequential default
+  - Encourages safer iteration by eliminating concurrent task execution unless explicitly enabled
+
 ## [0.8.3] - 2025-11-15
 
 ### Removed

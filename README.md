@@ -1,4 +1,4 @@
-# Orchestrator
+# Claude Code Orchestrator
 
 CLI wrapper for Claude Code that decomposes large development projects into autonomous, iteratively-executed tasks.
 
@@ -20,7 +20,7 @@ The orchestrator implements an autonomous system that:
 - Spawns subagents using `claude -p` (non-interactive mode)
 - Tracks full execution state via JSONL event logs
 - Manages goal-driven task execution with dependency graphs
-- Executes independent tasks in parallel waves (configurable `max_parallel_tasks`)
+- Executes independent tasks in parallel waves (configurable `max_parallel_tasks`, defaults to sequential execution)
 - Supports dynamic replanning and reflection
 - Captures long-running experiment history via the `run_script` tool and surfaces it in reviews
 - Implements Actor/Critic loop for code quality validation
@@ -69,7 +69,7 @@ orchestrator/
 ## Installation
 
 ```bash
-cd /path/to/orchestrator
+cd /path/to/claude-code-orchestrator
 uv sync
 uv run orchestrate --version  # Verify installation
 ```
@@ -99,7 +99,7 @@ Autonomously executes all tasks. Parallelizes independent work, retries failures
 **Run options:**
 - `--workspace PATH` - Set workspace directory (default: `.orchestrator`)
 - `--max-steps N` - Set maximum iterations
-- `--max-parallel-tasks N` - Control parallelism (overrides config)
+- `--max-parallel-tasks N` - Control parallelism (default 1 for safety; override to enable concurrency)
 - `--surgical` - Enable tight scope, minimal edits mode (minimal changes to existing code)
 
 ### 3. Schedule Experiments (Optional)
@@ -127,7 +127,7 @@ Enqueue long-running jobs (training, migrations, etc.) without blocking main orc
 
 **Smart Scheduling**
 - Dependency graph tracks task prerequisites
-- Parallel execution of independent work (configurable `max_parallel_tasks`)
+- Parallel execution of independent work (configurable `max_parallel_tasks`, default 1)
 - Priority-based task selection
 
 **Long-Running Jobs**
