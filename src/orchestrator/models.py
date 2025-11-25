@@ -117,10 +117,10 @@ class OrchestratorConfig(BaseModel):
     """Configuration for orchestrator runtime parameters."""
     min_steps: int = Field(default=50, description="Minimum steps before considering stopping")
     max_steps: int = Field(default=100, description="Maximum steps")
-    max_parallel_tasks: int = Field(default=1, description="Maximum number of tasks to run in parallel (default sequential execution)")
     subagent_max_turns: int = Field(default=15, ge=1, le=50, description="Maximum number of turns each subagent conversation may use")
     skip_integration_tests: bool = Field(default=True, description="Skip pytest tests marked with @pytest.mark.integration during verification")
     pytest_addopts: Optional[str] = Field(default=None, description="Additional PYTEST_ADDOPTS applied during verification runs")
+    docs_update_interval: int = Field(default=10, ge=1, description="Update docs/changelog every N completed tasks (10=every 10th step)")
 
     @classmethod
     def load(cls, config_path: Path) -> "OrchestratorConfig":

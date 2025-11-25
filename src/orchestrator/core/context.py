@@ -15,6 +15,59 @@ def _format_goal_line(goal: Goal) -> str:
     return f"- {goal.description} [{status}]"
 
 
+def _extract_deliverables(task: Task) -> str:
+    """Extract concrete deliverables from acceptance criteria for prominent display."""
+    if not task.acceptance_criteria:
+        return ""
+
+    deliverables = []
+    for check in task.acceptance_criteria:
+        if check.type == "file_exists":
+            deliverables.append(f"- CREATE FILE: `{check.target}`")
+        elif check.type == "pattern_in_file":
+            deliverables.append(f"- FILE WITH CONTENT: `{check.target}` (must contain: `{check.expected or check.description}`)")
+
+    if not deliverables:
+        return ""
+
+    return "## REQUIRED DELIVERABLES (CREATE THESE)\n" + "\n".join(deliverables) + "\n"
+
+
+def _format_acceptance_criteria(task: Task) -> str:
+    """Format acceptance criteria with explicit instructions for the actor."""
+    if not task.acceptance_criteria:
+        return "- None provided"
+
+    lines = []
+    lines.append("**CRITICAL: Your work will be automatically verified against these checks.**")
+    lines.append("**You MUST ensure your output satisfies ALL of these criteria or the task will FAIL.**\n")
+
+    for i, check in enumerate(task.acceptance_criteria, 1):
+        lines.append(f"### Check {i}: {check.description}")
+        lines.append(f"- Type: `{check.type}`")
+        lines.append(f"- Target: `{check.target}`")
+
+        if check.type == "pattern_in_file":
+            lines.append(f"- **REQUIRED PATTERN**: Your output file MUST contain text matching: `{check.expected or check.description}`")
+            lines.append("  - This is a regex pattern. Make sure your content includes words/phrases that match.")
+            if check.expected:
+                # Give examples of what would match
+                pattern = check.expected
+                if "|" in pattern:
+                    options = pattern.split("|")
+                    lines.append(f"  - Example valid matches: include ANY of these exact terms: {', '.join(options)}")
+        elif check.type == "file_exists":
+            lines.append(f"- **YOU MUST CREATE THIS FILE**: `{check.target}`")
+            lines.append("  - This file must exist when you finish. Use Write or Edit tools to create it.")
+            lines.append("  - The file path is relative to the project root directory.")
+        elif check.type == "command_succeeds":
+            lines.append(f"  - This command must exit with code 0: `{check.target}`")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def build_task_agent_prompt(task: Task, plan_context: PlanContext) -> str:
     """Return the implementation instructions for the actor."""
     feedback_section = ""
@@ -23,7 +76,7 @@ def build_task_agent_prompt(task: Task, plan_context: PlanContext) -> str:
             f"- [{'general' if entry.is_general else entry.task_id}] {entry.content}"
             for entry in plan_context.user_feedback[-5:]
         ]
-        feedback_section = f"\n## User Feedback (PRIORITY)\n" + "\n".join(feedback_lines) + "\n"
+        feedback_section = "\n## User Feedback (PRIORITY)\n" + "\n".join(feedback_lines) + "\n"
 
     surgical_section = ""
     if plan_context.surgical_mode:
@@ -39,13 +92,17 @@ Allowed focus areas:
 {allowed_block}
 """
 
+    acceptance_criteria = _format_acceptance_criteria(task)
+    deliverables = _extract_deliverables(task)
+
     return f"""You are the implementation agent for {task.id}.
 
+{deliverables}
 ## Objective
 {task.description}
 
-## Acceptance Criteria
-{chr(10).join(f'- {check.description} ({check.type}:{check.target})' for check in task.acceptance_criteria) or '- None provided'}
+## Acceptance Criteria (MANDATORY)
+{acceptance_criteria}
 
 {feedback_section if feedback_section else ''}
 
@@ -56,14 +113,8 @@ Allowed focus areas:
 - Document any limitations directly in code comments where relevant.
 - Avoid running slow external services unless required.
 - Always review the Operator Notes section for priority guidance before acting.
-- **Commands expected to run >2 minutes _must_ use the experiment runner**:
-  ```
-  python -m orchestrator.tools.run_script --cmd "pytest -m slow" --run-name "slow-suite" --task-id "{task.id}" --mode enqueue
-  ```
-  This hands the job off to the orchestrator so Claude is free to continue; the orchestrator waits for completion,
-  captures logs in `.orchestrator/history/logs/`, and appends metrics/artifacts to `.orchestrator/history/experiments.jsonl`.
-- Blocking commands can still use `--mode blocking` when they finish quickly. The enqueue mode is preferred for
-  model training, full test suites, migrations, builds, and heavy data processing.
+- **NEVER create files inside the `.orchestrator/` directory** - that directory is reserved for orchestrator metadata only. All project files, outputs, and deliverables must be created in the project root or its subdirectories (NOT inside `.orchestrator/`).
+- **DO NOT update CHANGELOG.md** - changelog updates are handled automatically by the orchestrator at specific intervals. Manual updates will cause duplicate entries.
 
 Respond with the mandatory JSON block when finished."""
 

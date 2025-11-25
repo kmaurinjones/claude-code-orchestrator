@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from datetime import datetime
-import threading
 
 from rich.console import Console
 
@@ -22,12 +21,9 @@ from .tester import Tester
 from .reviewer import Reviewer
 from .notes import NotesManager
 from .feedback import FeedbackTracker
-from .parallel_executor import ParallelExecutor
 from .replanner import Replanner
 from .domain_context import DomainDetector
-from .long_jobs import LongRunningJobManager
 from .critic import Critic
-from .history import HistoryRecorder
 from .completion_summary import CompletionSummary
 
 console = Console()
@@ -46,12 +42,12 @@ class Orchestrator:
         workspace: Path = Path(".orchestrator"),
         min_steps: int = 50,
         max_steps: int = 100,
-        max_parallel_tasks: int = 1,
         subagent_max_turns: int = 12,
         skip_integration_tests: bool = True,
         pytest_addopts: Optional[str] = None,
         surgical_mode: bool = False,
         surgical_paths: Optional[List[str]] = None,
+        docs_update_interval: int = 10,
     ):
         self.workspace = workspace.resolve()
         self.project_root = self.workspace.parent
@@ -61,7 +57,6 @@ class Orchestrator:
 
         self.min_steps = min_steps
         self.max_steps = max_steps
-        self.max_parallel_tasks = max_parallel_tasks
         self.subagent_max_turns = subagent_max_turns
 
         self.logger = EventLogger(self.workspace / "full_history.jsonl")
@@ -85,20 +80,16 @@ class Orchestrator:
         self.docs_manager = DocsManager(self.project_root, self.logger)
         self.docs_manager.initialize()
 
-        self.history_recorder = HistoryRecorder(self.workspace)
-        self.parallel_executor = ParallelExecutor(max_parallel=self.max_parallel_tasks)
         self.replanner = Replanner(self.project_root, self.logger, log_workspace=self.workspace)
-        self.long_jobs = LongRunningJobManager(self.workspace, self.project_root)
         self.completion_summary = CompletionSummary(self.project_root, self.workspace)
         self.surgical_mode = surgical_mode
         self.surgical_paths = [str(Path(p)) for p in surgical_paths] if surgical_paths else []
         self.project_domain = DomainDetector.detect(self.project_root, self.goals.core_goals)
 
-        self._step_lock = threading.Lock()
-        self._active_tasks: Set[str] = set()
-
         self.current_step = 0
         self.trace_id = f"orch-{uuid4().hex[:8]}"
+
+        self.docs_update_interval = docs_update_interval
 
         self.planner = Planner(
             project_root=self.project_root,
@@ -109,7 +100,6 @@ class Orchestrator:
             feedback_tracker=self.feedback_tracker,
             docs_manager=self.docs_manager,
             changelog_manager=self.changelog_manager,
-            history_recorder=self.history_recorder,
             replanner=self.replanner,
             logger=self.logger,
             domain=self.project_domain,
@@ -117,6 +107,7 @@ class Orchestrator:
             step_allocator=self._next_step,
             surgical_mode=self.surgical_mode,
             surgical_paths=self.surgical_paths,
+            docs_update_interval=self.docs_update_interval,
         )
 
         self.actor = Actor(
@@ -141,10 +132,9 @@ class Orchestrator:
     # --------------------------------------------------------------------- #
 
     def run(self) -> str:
-        console.print(f"[cyan]{_timestamp()} [ORCHESTRATOR][/cyan] Starting simplified execution loop")
+        console.print(f"[cyan]{_timestamp()} [ORCHESTRATOR][/cyan] Starting sequential execution loop")
         console.print(f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] Min steps: {self.min_steps}")
         console.print(f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] Max steps: {self.max_steps}")
-        console.print(f"[dim]{_timestamp()} [ORCHESTRATOR][/dim] Max parallel tasks: {self.max_parallel_tasks}")
         console.print()
 
         self._log_checkpoint("start", {"max_steps": self.max_steps})
@@ -160,34 +150,22 @@ class Orchestrator:
                 break
 
             self.planner.refresh_context(self.current_step)
-            self.long_jobs.process_queue()
-            self.long_jobs.poll()
 
-            decisions = self.planner.next_decisions(
-                max_parallel=self.max_parallel_tasks,
-                active_ids=self._active_tasks,
-            )
+            decision = self.planner.next_decision()
 
-            if not decisions:
+            if not decision:
                 console.print(f"[yellow]{_timestamp()} [ORCHESTRATOR][/yellow] No ready tasks remaining")
                 completion_reason = "NO_TASKS_AVAILABLE"
                 break
 
-            for decision in decisions:
-                if decision.task:
-                    self._active_tasks.add(decision.task.id)
-
-            result = self.parallel_executor.execute(
-                decisions,
-                process_func=self._execute_decision,
-            )
-
-            finished_ids = set(result["tasks"]["completed"]) | set(result["tasks"]["failed"])
-            self._active_tasks.difference_update(finished_ids)
+            self._execute_decision(decision)
 
         if completion_reason is None:
             console.print(f"[yellow]{_timestamp()} [ORCHESTRATOR][/yellow] Reached max iterations ({self.max_steps})")
             completion_reason = "MAX_ITERATIONS_REACHED"
+
+        # Flush any pending docs updates before exit
+        self.planner.flush_docs_updates()
 
         # Generate and display completion summary
         self.completion_summary.generate_and_display(
@@ -208,16 +186,7 @@ class Orchestrator:
         if decision.type != DecisionType.EXECUTE_TASK:
             return
 
-        task = decision.task
-        if task:
-            console.print(
-                f"[cyan]{_timestamp()} [ORCHESTRATOR][/cyan] Selected task: {task.id} ({task.title})"
-            )
         outcome = self.actor.execute(decision)
-
-        if task:
-            self.long_jobs.wait_for_task_jobs(task.id)
-
         verdict = self.critic.evaluate(decision, outcome)
         self.planner.apply_outcome(decision, outcome, verdict)
 
@@ -226,10 +195,9 @@ class Orchestrator:
     # --------------------------------------------------------------------- #
 
     def _next_step(self) -> int:
-        """Atomically increment and return the current step counter."""
-        with self._step_lock:
-            self.current_step += 1
-            return self.current_step
+        """Increment and return the current step counter."""
+        self.current_step += 1
+        return self.current_step
 
     def _log_checkpoint(self, action: str, payload: Dict[str, object], step_override: Optional[int] = None) -> None:
         self.logger.log(

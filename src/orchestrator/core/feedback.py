@@ -50,7 +50,8 @@ This file allows you to provide feedback to the orchestrator during execution.
 
 {self.NEW_NOTES_HEADER}
 
-- [general] Example note
+<!-- Example: - [general] pause work on task-003 -->
+<!-- Example: - [task-005] use POST instead of GET -->
 
 
 ---

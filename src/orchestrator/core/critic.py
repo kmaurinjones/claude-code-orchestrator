@@ -6,6 +6,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import which
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
 
@@ -244,16 +245,7 @@ class Critic:
     def _domain_specific_findings(self, domain: Optional[str]) -> List[str]:
         if not domain:
             return []
-        findings: List[str] = []
-        normalized = domain.lower()
-        if normalized == "data_science":
-            experiments_file = self.workspace / "history" / "experiments.jsonl"
-            if not experiments_file.exists() or not experiments_file.read_text(encoding="utf-8").strip():
-                findings.append(
-                    "No recorded experiments in .orchestrator/history/experiments.jsonl. "
-                    "Run `orchestrate experiment` or log calibration runs before finalizing."
-                )
-        return findings
+        return []
 
     def _collect_changed_files(self) -> List[str]:
         try:

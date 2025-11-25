@@ -94,7 +94,7 @@ class Subagent:
         max_turns: int = 10,
         claude_executable: Optional[str] = None,
         next_action: Optional[str] = None,
-        model: str = "haiku",
+        model: str = "sonnet",
         log_workspace: Optional[Path] = None,
     ):
         self.task_id = task_id
@@ -168,7 +168,7 @@ class Subagent:
             actor=self.trace_id,
             payload={
                 "task_id": self.task_id,
-                "task": self.task_description[:200],
+                "task": self.task_description,
                 "context_length": len(self.context),
                 "workspace": str(self.workspace),
                 "workspace_cwd": str(self.workspace)  # Debug: show what cwd will be

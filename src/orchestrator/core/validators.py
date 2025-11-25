@@ -71,12 +71,12 @@ class HTTPEndpointValidator:
         except requests.exceptions.ConnectionError as e:
             return ValidationResult(
                 passed=False,
-                message=f"Connection failed: {str(e)[:100]}",
+                message=f"Connection failed: {str(e)}",
             )
         except Exception as e:
             return ValidationResult(
                 passed=False,
-                message=f"HTTP check failed: {str(e)[:100]}",
+                message=f"HTTP check failed: {str(e)}",
             )
 
 

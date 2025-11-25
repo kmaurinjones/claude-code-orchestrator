@@ -244,7 +244,7 @@ class TaskGraph:
                     for check in task.acceptance_criteria:
                         lines.append(f'  - Verify: {check.type}:{check.target} "{check.description}"')
                 if task.summary:
-                    lines.append(f"  - Summary: {task.summary[-1][:100]}")
+                    lines.append(f"  - Summary: {task.summary[-1]}")
                 lines.append("\n")
 
         self.tasks_path.parent.mkdir(parents=True, exist_ok=True)

@@ -10,6 +10,7 @@ import json
 import re
 
 from ..models import Task
+from .feedback import FeedbackEntry
 from .subagent import Subagent
 from .logger import EventLogger
 
@@ -28,7 +29,6 @@ def _build_reviewer_task_description(
     test_feedback: List[Dict[str, Any]],
     notes_overview: str,
     user_feedback: List[FeedbackEntry],
-    experiments_summary: str,
     domain: str,
     short_mode: bool = False,
     retry_count: int = 0,
@@ -45,9 +45,9 @@ def _build_reviewer_task_description(
                 f"- [FAIL] {result['description']}\n  Message: {result['message']}"
             )
             if result.get("stdout"):
-                lines.append(f"  Stdout: {result['stdout'][:180]}")
+                lines.append(f"  Stdout: {result['stdout']}")
             if result.get("stderr"):
-                lines.append(f"  Stderr: {result['stderr'][:180]}")
+                lines.append(f"  Stderr: {result['stderr']}")
         if len(failures) > 3:
             lines.append(f"- ... {len(failures) - 3} additional failures omitted")
         tests_section = "\n".join(lines)
@@ -98,9 +98,6 @@ def _build_reviewer_task_description(
 
 ## Operator Notes (highest priority)
 {notes_overview or 'No operator notes.'}
-
-## Recent Experiments
-{experiments_summary or 'No experiments recorded.'}
 
 ## User Feedback (CRITICAL - must address)
 {user_feedback_section}
@@ -180,7 +177,6 @@ class Reviewer:
             test_feedback,
             notes_summary,
             user_feedback or [],
-            self._get_experiment_history(),
             domain,
             short_mode=short_mode,
             retry_count=retry_count,
@@ -226,7 +222,7 @@ class Reviewer:
                 summary = "Reviewer hit max turns before providing feedback."
                 next_steps = next_steps or "Retry the review with tighter prompt or fewer context details."
             elif raw_output:
-                summary = raw_output[:200]
+                summary = raw_output
             else:
                 summary = "Reviewer response unavailable."
 
@@ -238,39 +234,6 @@ class Reviewer:
             raw_output=raw_output,
         )
 
-    def _get_experiment_history(self, limit: int = 5) -> str:
-        """Summarize recent experiment runs from the history directory."""
-        history_dir = self.project_root / ".orchestrator" / "history"
-        history_file = history_dir / "experiments.jsonl"
-
-        if not history_file.exists():
-            return "No experiments recorded."
-
-        lines = [line.strip() for line in history_file.read_text().splitlines() if line.strip()]
-        if not lines:
-            return "No experiments recorded."
-
-        entries = []
-        for line in reversed(lines):
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            run_name = record.get("run_name", "unknown-run")
-            command = record.get("command", "")
-            return_code = record.get("return_code", "?")
-            metrics = record.get("metrics") or {}
-            metrics_summary = ", ".join(f"{k}={v}" for k, v in metrics.items()) if metrics else "no metrics"
-            entries.append(f"- {run_name} (exit {return_code}): {command} | {metrics_summary}")
-
-            if len(entries) >= limit:
-                break
-
-        if not entries:
-            return "No experiments recorded."
-
-        return "\n".join(reversed(entries))
 
 
 def _domain_reviewer_focus(domain: str) -> str:
@@ -290,6 +253,6 @@ def _domain_reviewer_focus(domain: str) -> str:
             "- Confirm build/test commands are updated and note UX impacts."
         )
     return (
-        "- Confirm README/changelog entries reflect the change.\n"
-        "- Call out risks or follow-ups before marking complete."
+        "- Call out risks or follow-ups before marking complete.\n"
+        "- Do NOT update CHANGELOG.md - changelog updates are handled automatically by the orchestrator."
     )

@@ -8,7 +8,6 @@ import argparse
 
 from ..core.orchestrator import Orchestrator
 from ..core.subagent import find_claude_executable
-from ..core.experiments import ExperimentManager
 from ..models import OrchestratorConfig
 from .. import __version__
 
@@ -31,7 +30,6 @@ def main():
     run_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
     run_parser.add_argument("--min-steps", type=int, default=None, help="Minimum iterations (overrides config)")
     run_parser.add_argument("--max-steps", type=int, default=None, help="Maximum iterations (overrides config)")
-    run_parser.add_argument("--max-parallel-tasks", type=int, default=None, help="Maximum number of tasks to run in parallel (overrides config)")
     run_parser.add_argument("--surgical", action="store_true", help="Enable surgical mode (tight scope, minimal edits)")
     run_parser.add_argument(
         "--surgical-path",
@@ -40,17 +38,6 @@ def main():
         default=None,
         help="Paths that the surgical run should focus on (repeat for multiple).",
     )
-
-    # Experiment command
-    experiment_parser = subparsers.add_parser("experiment", help="Schedule a long-running experiment")
-    experiment_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
-    experiment_parser.add_argument("--cmd", required=True, help="Command to execute")
-    experiment_parser.add_argument("--run-name", default=None, help="Name recorded in experiment history")
-    experiment_parser.add_argument("--workdir", type=Path, default=Path("."), help="Working directory for the command")
-    experiment_parser.add_argument("--timeout", type=int, default=None, help="Optional timeout (seconds)")
-    experiment_parser.add_argument("--notes", default=None, help="Optional notes to store with the experiment")
-    experiment_parser.add_argument("--task-id", default=None, help="Related task identifier (optional)")
-    experiment_parser.add_argument("--metrics-file", default=None, help="Optional path to JSON metrics emitted by the command")
 
     args = parser.parse_args()
 
@@ -189,16 +176,17 @@ IMPORTANT:
 - Add verification checks under each task using format: "Verify: <type>:<target> "<description>""
 - Verification types: file_exists, command_passes, pattern_in_file
 - These checks prove task completion objectively
+- **CRITICAL**: All file paths in verification checks must be relative to the project root, NOT inside `.orchestrator/`. The `.orchestrator/` directory is reserved for orchestrator metadata only. Example: use `research/notes.md` NOT `.orchestrator/current/research/notes.md`.
 
 Tell the user the interview is complete and they should now run: orchestrate run
 
 Start the interview now.
 """
 
-        # Run interactive Claude session
+        # Run interactive Claude session (Opus for planning/interview quality)
         subprocess.run([
             claude_path,
-            "--model", "sonnet",
+            "--model", "opus",
             "--dangerously-skip-permissions",
             prompt
         ])
@@ -232,7 +220,6 @@ Start the interview now.
         # CLI args override config
         min_steps = args.min_steps if args.min_steps is not None else config.min_steps
         max_steps = args.max_steps if args.max_steps is not None else config.max_steps
-        max_parallel_tasks = args.max_parallel_tasks if args.max_parallel_tasks is not None else config.max_parallel_tasks
 
         console.print("[bold]Starting Orchestrator...[/bold]\n")
         console.print(f"Working directory: {Path.cwd()}")
@@ -241,7 +228,6 @@ Start the interview now.
             console.print(f"[dim]Config: {config_path}[/dim]")
         console.print(f"Min iterations: {min_steps}")
         console.print(f"Max iterations: {max_steps}")
-        console.print(f"Max parallel tasks: {max_parallel_tasks}")
         console.print(f"Subagent max turns: {config.subagent_max_turns}")
         console.print(f"Skip integration tests: {config.skip_integration_tests}")
         if config.pytest_addopts:
@@ -256,12 +242,12 @@ Start the interview now.
             workspace=args.workspace,
             min_steps=min_steps,
             max_steps=max_steps,
-            max_parallel_tasks=max_parallel_tasks,
             subagent_max_turns=config.subagent_max_turns,
             skip_integration_tests=config.skip_integration_tests,
             pytest_addopts=config.pytest_addopts,
             surgical_mode=args.surgical,
             surgical_paths=args.surgical_paths,
+            docs_update_interval=config.docs_update_interval,
         )
         result = orch.run()
 
@@ -279,20 +265,6 @@ Start the interview now.
             console.print("Some goals may not be complete. Check .orchestrator/current/TASKS.md")
 
         console.print(f"\nEvent log: {args.workspace / 'full_history.jsonl'}")
-
-    elif args.command == "experiment":
-        manager = ExperimentManager(args.workspace)
-        job_file = manager.schedule(
-            command=args.cmd,
-            run_name=args.run_name,
-            workdir=args.workdir,
-            timeout=args.timeout,
-            notes=args.notes,
-            task_id=args.task_id,
-            metrics_file=args.metrics_file,
-        )
-        console.print(f"[green]✓[/green] Experiment enqueued: {job_file.name}")
-        console.print(f"Logs: {manager.logs_dir}")
 
     else:
         parser.print_help()

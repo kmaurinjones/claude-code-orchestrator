@@ -214,12 +214,10 @@ Return ONLY the markdown guide, no preamble."""
         if domain == "data_science":
             return f"""## Quick Start
 Run pipeline: `uv run python main.py`
-Check experiments: `cat .orchestrator/history/experiments.jsonl`
 
 ## Key Files
 - Training scripts: Look for `train*.py` files
 - Notebooks: Check `.ipynb` files for exploratory analysis
-- Metrics: `.orchestrator/history/experiments.jsonl`
 
 ## Recent Work
 {task_summary}
@@ -266,35 +264,10 @@ Run CLI: `uv run python main.py` (see README.md for options)
             task for task in tasks.tasks.values()
             if task.status == TaskStatus.COMPLETE
         ]
-        if completed:
-            return [
-                f"- {task.title}: {task.description[:120]}"
-                for task in completed[-limit:]
-            ]
-
-        history_file = self.workspace / "history" / "tasks.jsonl"
-        if not history_file.exists():
-            return []
-
-        lines = history_file.read_text(encoding="utf-8").splitlines()
-        entries: List[str] = []
-        for line in reversed(lines):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if str(data.get("status", "")).upper() != TaskStatus.COMPLETE.name:
-                continue
-            title = data.get("title", "Task")
-            summary = (data.get("review_summary") or "")[:120]
-            text = f"- {title}: {summary}" if summary else f"- {title}"
-            entries.append(text)
-            if len(entries) >= limit:
-                break
-        return list(reversed(entries))
+        return [
+            f"- {task.title}: {task.description}"
+            for task in completed[-limit:]
+        ]
 
     def _task_statistics(self, tasks: TaskGraph) -> Dict[str, int]:
         all_tasks = list(tasks.tasks.values())

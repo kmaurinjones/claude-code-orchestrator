@@ -28,7 +28,7 @@ class Actor:
         logger: EventLogger,
         trace_id: str,
         max_turns: int = 12,
-        model: str = "haiku",
+        model: str = "sonnet",
     ) -> None:
         self.project_root = Path(project_root).resolve()
         self.workspace = Path(workspace).resolve()
@@ -52,7 +52,7 @@ class Actor:
         agent_result = self._run_subagent(task, prompt, workspace_context, decision.step)
         status = (agent_result.get("status") or "").lower()
         if status != "success":
-            error_summary = agent_result.get("error") or agent_result.get("output", "")[:200]
+            error_summary = agent_result.get("error") or agent_result.get("output", "")
             console.print(
                 f"[yellow]{self._timestamp()} [ACTOR][/yellow] {task.id} subagent failed: {error_summary}"
             )

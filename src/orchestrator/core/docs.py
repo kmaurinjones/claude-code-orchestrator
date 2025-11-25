@@ -147,7 +147,7 @@ Focus on making the documentation useful for someone new to the project.
             step=step,
             workspace=workspace,
             max_turns=20,  # Docs updates may need more turns
-            model="haiku",
+            model="sonnet",
             log_workspace=log_workspace or workspace,
         )
 
@@ -277,7 +277,7 @@ Focus on making the documentation useful for someone new to the project.
             step=step,
             workspace=self.project_root,
             max_turns=12,
-            model="haiku",
+            model="sonnet",
             log_workspace=self.project_root / ".orchestrator" if (self.project_root / ".orchestrator").exists() else self.project_root,
         )
 

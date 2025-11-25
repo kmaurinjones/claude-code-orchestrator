@@ -5,6 +5,23 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2025-11-24
+
+### Changed
+- **Changelog Update Frequency**: Changed from task-count-based to step-based interval tracking
+  - Updates now occur only at: start (step 0), every 10th step, and end of run
+  - Actor and reviewer prompts now explicitly forbid manual CHANGELOG.md updates
+- **Console Output Consolidation**: Removed duplicate task selection print (was showing from both PLANNER and ORCHESTRATOR)
+
+### Fixed
+- **Phantom Feedback Ingestion**: USER_NOTES.md template examples changed to HTML comments so they're not parsed as actual feedback on fresh runs
+
+### Reverted
+- **Repository State**: Reverted from 0.10.0 remote state to local development branch containing architectural improvements from 0.8.5 through 0.10.6
+  - Removed deprecated modules: experiments.py, history.py, long_jobs.py, parallel_executor.py, run_script.py
+  - Added new modules: checkpoint.py, failure_diagnosis.py, goal_alignment.py
+  - Significant planner/actor/critic loop refinements
+
 ## [0.8.5] - 2025-11-17
 
 ### Changed
