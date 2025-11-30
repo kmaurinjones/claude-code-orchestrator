@@ -17,6 +17,7 @@ from ..models import Goal
 @dataclass
 class EvaluationResult:
     """Result of evaluating a goal."""
+
     goal_id: str
     achieved: bool
     confidence: float  # 0.0 to 1.0
@@ -57,7 +58,9 @@ class TestSuiteEvaluator(GoalEvaluator):
         # Try pytest
         pytest_result = self._run_pytest(project_root)
         if pytest_result["ran"]:
-            evidence.append(f"Pytest: {pytest_result['passed']}/{pytest_result['total']} passed")
+            evidence.append(
+                f"Pytest: {pytest_result['passed']}/{pytest_result['total']} passed"
+            )
             if pytest_result["passed"] == pytest_result["total"]:
                 return EvaluationResult(
                     goal_id=goal.id,
@@ -167,15 +170,26 @@ class MetricThresholdEvaluator(GoalEvaluator):
 
     def can_evaluate(self, goal: Goal) -> bool:
         """Check if goal specifies metric thresholds."""
-        keywords = ["accuracy", "precision", "recall", "f1", "auc", "rmse", "mae", "r2", "metric"]
+        keywords = [
+            "accuracy",
+            "precision",
+            "recall",
+            "f1",
+            "auc",
+            "rmse",
+            "mae",
+            "r2",
+            "metric",
+        ]
         text = (goal.description + " " + goal.measurable_criteria).lower()
         return any(kw in text for kw in keywords)
 
     def evaluate(self, goal: Goal, project_root: Path) -> EvaluationResult:
         """Check if metrics meet threshold."""
         # Look for metrics files
-        metrics_files = list(project_root.rglob("*metrics*.json")) + \
-                       list(project_root.rglob("*results*.json"))
+        metrics_files = list(project_root.rglob("*metrics*.json")) + list(
+            project_root.rglob("*results*.json")
+        )
 
         if not metrics_files:
             return EvaluationResult(
@@ -215,7 +229,8 @@ class MetricThresholdEvaluator(GoalEvaluator):
                     goal_id=goal.id,
                     achieved=True,
                     confidence=0.9,
-                    evidence=evidence + [f"{metric_name} {actual_value} >= {target_value}"],
+                    evidence=evidence
+                    + [f"{metric_name} {actual_value} >= {target_value}"],
                     blockers=[],
                     recommendations=[],
                 )
@@ -226,7 +241,10 @@ class MetricThresholdEvaluator(GoalEvaluator):
                     confidence=0.85,
                     evidence=evidence,
                     blockers=[f"{metric_name} {actual_value} < {target_value}"],
-                    recommendations=["Improve model performance", "Review training approach"],
+                    recommendations=[
+                        "Improve model performance",
+                        "Review training approach",
+                    ],
                 )
 
         # No threshold specified, use heuristics
@@ -267,7 +285,9 @@ class MetricThresholdEvaluator(GoalEvaluator):
         import json
 
         # Sort by modification time
-        metrics_files_sorted = sorted(metrics_files, key=lambda p: p.stat().st_mtime, reverse=True)
+        metrics_files_sorted = sorted(
+            metrics_files, key=lambda p: p.stat().st_mtime, reverse=True
+        )
 
         for metrics_file in metrics_files_sorted:
             try:
@@ -301,9 +321,11 @@ class APIContractEvaluator(GoalEvaluator):
     def evaluate(self, goal: Goal, project_root: Path) -> EvaluationResult:
         """Check API contracts."""
         # Look for OpenAPI spec
-        spec_files = list(project_root.rglob("*openapi*.json")) + \
-                    list(project_root.rglob("*openapi*.yaml")) + \
-                    list(project_root.rglob("*swagger*.json"))
+        spec_files = (
+            list(project_root.rglob("*openapi*.json"))
+            + list(project_root.rglob("*openapi*.yaml"))
+            + list(project_root.rglob("*swagger*.json"))
+        )
 
         if spec_files:
             return EvaluationResult(

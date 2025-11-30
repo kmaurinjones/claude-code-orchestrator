@@ -66,12 +66,15 @@ class VerificationCheck(BaseModel):
     - type_check: Run type checker (mypy, tsc, etc.)
     - data_quality: Check dataset quality (nulls, duplicates, ranges)
     """
+
     type: str
     target: str  # File path, URL, command, or metric name
     expected: Optional[str] = None  # Expected value/pattern
     description: str  # Human-readable description of what's being checked
     timeout: Optional[int] = None  # Timeout in seconds (for commands/HTTP)
-    metadata: Dict[str, Any] = Field(default_factory=dict)  # Extra config per check type
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict
+    )  # Extra config per check type
 
 
 class Task(BaseModel):
@@ -107,6 +110,7 @@ class LogEvent(BaseModel):
 
 class ClaudeResponse(BaseModel):
     """Parsed response from Claude Code CLI --output-format json"""
+
     content: str
     stop_reason: Optional[str] = None
     usage: Optional[Dict[str, int]] = None
@@ -115,12 +119,30 @@ class ClaudeResponse(BaseModel):
 
 class OrchestratorConfig(BaseModel):
     """Configuration for orchestrator runtime parameters."""
-    min_steps: int = Field(default=50, description="Minimum steps before considering stopping")
+
+    min_steps: int = Field(
+        default=50, description="Minimum steps before considering stopping"
+    )
     max_steps: int = Field(default=100, description="Maximum steps")
-    subagent_max_turns: int = Field(default=15, ge=1, le=50, description="Maximum number of turns each subagent conversation may use")
-    skip_integration_tests: bool = Field(default=True, description="Skip pytest tests marked with @pytest.mark.integration during verification")
-    pytest_addopts: Optional[str] = Field(default=None, description="Additional PYTEST_ADDOPTS applied during verification runs")
-    docs_update_interval: int = Field(default=10, ge=1, description="Update docs/changelog every N completed tasks (10=every 10th step)")
+    subagent_max_turns: int = Field(
+        default=15,
+        ge=1,
+        le=50,
+        description="Maximum number of turns each subagent conversation may use",
+    )
+    skip_integration_tests: bool = Field(
+        default=True,
+        description="Skip pytest tests marked with @pytest.mark.integration during verification",
+    )
+    pytest_addopts: Optional[str] = Field(
+        default=None,
+        description="Additional PYTEST_ADDOPTS applied during verification runs",
+    )
+    docs_update_interval: int = Field(
+        default=10,
+        ge=1,
+        description="Update docs/changelog every N completed tasks (10=every 10th step)",
+    )
 
     @classmethod
     def load(cls, config_path: Path) -> "OrchestratorConfig":
@@ -129,7 +151,8 @@ class OrchestratorConfig(BaseModel):
             return cls()
 
         import yaml
-        with open(config_path, 'r') as f:
+
+        with open(config_path, "r") as f:
             data = yaml.safe_load(f) or {}
 
         return cls(**data)
@@ -137,12 +160,10 @@ class OrchestratorConfig(BaseModel):
     def save(self, config_path: Path) -> None:
         """Save config to YAML file."""
         import yaml
+
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             yaml.safe_dump(
-                self.model_dump(),
-                f,
-                default_flow_style=False,
-                sort_keys=False
+                self.model_dump(), f, default_flow_style=False, sort_keys=False
             )

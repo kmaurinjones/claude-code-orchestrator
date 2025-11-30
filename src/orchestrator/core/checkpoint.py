@@ -100,7 +100,9 @@ class CheckpointManager:
         # Cleanup old checkpoints
         self._cleanup_old_checkpoints()
 
-        console.print(f"[dim]{self._timestamp()} [CHECKPOINT][/dim] Saved checkpoint at step {step}")
+        console.print(
+            f"[dim]{self._timestamp()} [CHECKPOINT][/dim] Saved checkpoint at step {step}"
+        )
 
         return checkpoint_file
 
@@ -114,7 +116,9 @@ class CheckpointManager:
             data = json.loads(latest_file.read_text())
             return CheckpointData.from_dict(data)
         except (json.JSONDecodeError, KeyError) as exc:
-            console.print(f"[yellow]{self._timestamp()} [CHECKPOINT][/yellow] Failed to load checkpoint: {exc}")
+            console.print(
+                f"[yellow]{self._timestamp()} [CHECKPOINT][/yellow] Failed to load checkpoint: {exc}"
+            )
             return None
 
     def load_step(self, step: int) -> Optional[CheckpointData]:
@@ -127,7 +131,9 @@ class CheckpointManager:
             data = json.loads(checkpoint_file.read_text())
             return CheckpointData.from_dict(data)
         except (json.JSONDecodeError, KeyError) as exc:
-            console.print(f"[yellow]{self._timestamp()} [CHECKPOINT][/yellow] Failed to load checkpoint: {exc}")
+            console.print(
+                f"[yellow]{self._timestamp()} [CHECKPOINT][/yellow] Failed to load checkpoint: {exc}"
+            )
             return None
 
     def list_checkpoints(self) -> List[Dict[str, Any]]:
@@ -139,14 +145,16 @@ class CheckpointManager:
         for file in sorted(self.checkpoint_dir.glob("checkpoint_*.json")):
             try:
                 data = json.loads(file.read_text())
-                checkpoints.append({
-                    "file": file.name,
-                    "step": data["step"],
-                    "timestamp": data["timestamp"],
-                    "trace_id": data["trace_id"],
-                    "completed_count": len(data.get("completed_task_ids", [])),
-                    "failed_count": len(data.get("failed_task_ids", [])),
-                })
+                checkpoints.append(
+                    {
+                        "file": file.name,
+                        "step": data["step"],
+                        "timestamp": data["timestamp"],
+                        "trace_id": data["trace_id"],
+                        "completed_count": len(data.get("completed_task_ids", [])),
+                        "failed_count": len(data.get("failed_task_ids", [])),
+                    }
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
 
@@ -159,7 +167,7 @@ class CheckpointManager:
 
         checkpoint_files = sorted(self.checkpoint_dir.glob("checkpoint_*.json"))
         if len(checkpoint_files) > self.max_checkpoints:
-            for old_file in checkpoint_files[:-self.max_checkpoints]:
+            for old_file in checkpoint_files[: -self.max_checkpoints]:
                 old_file.unlink()
 
     def clear_all(self) -> None:
@@ -167,7 +175,9 @@ class CheckpointManager:
         if self.checkpoint_dir.exists():
             for file in self.checkpoint_dir.glob("*.json"):
                 file.unlink()
-            console.print(f"[dim]{self._timestamp()} [CHECKPOINT][/dim] Cleared all checkpoints")
+            console.print(
+                f"[dim]{self._timestamp()} [CHECKPOINT][/dim] Cleared all checkpoints"
+            )
 
     @staticmethod
     def _timestamp() -> str:

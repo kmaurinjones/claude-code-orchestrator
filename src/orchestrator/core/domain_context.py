@@ -14,6 +14,15 @@ class DomainDetector:
     DATA_KEYWORDS = {"dataset", "model", "training", "accuracy", "precision"}
     BACKEND_KEYWORDS = {"api", "endpoint", "service", "backend"}
     FRONTEND_INDICATORS = {"package.json", "vite.config.ts", "next.config.js"}
+    WEB_APP_KEYWORDS = {
+        "web app",
+        "webapp",
+        "website",
+        "ui",
+        "interface",
+        "dashboard",
+        "user interface",
+    }
 
     @staticmethod
     def detect(project_root: Path, goals: Iterable[Goal]) -> str:
@@ -22,11 +31,42 @@ class DomainDetector:
 
         if DomainDetector._looks_like_data_science(root, goals_text):
             return "data_science"
+        if DomainDetector._looks_like_web_app(root, goals_text):
+            return "web_app"  # Full-stack web app with UI testing needs
         if DomainDetector._looks_like_backend(root, goals_text):
             return "backend"
         if DomainDetector._looks_like_frontend(root):
             return "frontend"
         return "tooling"
+
+    @staticmethod
+    def _looks_like_web_app(project_root: Path, goals_text: str) -> bool:
+        """Detect web application projects needing browser automation testing."""
+        # Check for common web app structures
+        has_frontend = any(
+            (project_root / indicator).exists()
+            for indicator in DomainDetector.FRONTEND_INDICATORS
+        )
+        has_backend = any(
+            (project_root / f).exists()
+            for f in ["app.py", "main.py", "server.js", "manage.py"]
+        )
+
+        # Full-stack app detection
+        if has_frontend and has_backend:
+            return True
+
+        # Check goals for web app keywords
+        if any(keyword in goals_text for keyword in DomainDetector.WEB_APP_KEYWORDS):
+            return True
+
+        # Check for common web app directories
+        web_dirs = ["pages", "views", "templates", "components"]
+        if any((project_root / d).is_dir() for d in web_dirs):
+            if has_frontend or has_backend:
+                return True
+
+        return False
 
     @staticmethod
     def _looks_like_data_science(project_root: Path, goals_text: str) -> bool:
@@ -53,7 +93,10 @@ class DomainDetector:
 
     @staticmethod
     def _looks_like_frontend(project_root: Path) -> bool:
-        return any((project_root / indicator).exists() for indicator in DomainDetector.FRONTEND_INDICATORS)
+        return any(
+            (project_root / indicator).exists()
+            for indicator in DomainDetector.FRONTEND_INDICATORS
+        )
 
 
 class DomainContext:
@@ -63,11 +106,93 @@ class DomainContext:
     def build(domain: str, project_root: Path) -> str:
         if domain == "data_science":
             return DomainContext._build_ds_context(project_root)
+        if domain == "web_app":
+            return DomainContext._build_web_app_context()
         if domain == "backend":
             return DomainContext._build_backend_context()
         if domain == "frontend":
             return DomainContext._build_frontend_context()
         return DomainContext._build_tooling_context()
+
+    @staticmethod
+    def get_testing_recommendations(domain: str) -> str:
+        """Get domain-specific testing recommendations."""
+        if domain == "data_science":
+            return """
+## Testing Recommendations (Data Science)
+- Run model evaluation scripts and capture metrics
+- Verify train/test splits are deterministic
+- Check for data leakage with feature importance analysis
+- Validate model outputs on held-out test set
+"""
+        if domain == "web_app":
+            return """
+## Testing Recommendations (Web App) - BROWSER AUTOMATION REQUIRED
+⚠️ **End-to-end UI testing is CRITICAL for web applications.**
+
+Before marking features as complete:
+1. **Start the dev server**: Run `init.sh` or equivalent to start the application
+2. **Browser automation**: Use Puppeteer/Playwright to:
+   - Navigate to the application
+   - Test user flows end-to-end (click buttons, fill forms, verify responses)
+   - Take screenshots to verify visual correctness
+   - Check for console errors and network failures
+3. **Verify as a user would**: Don't just check code - actually USE the feature
+
+Common testing flows:
+- Login/logout if authentication exists
+- Create/read/update/delete operations
+- Error states (invalid input, network failures)
+- Responsive behavior (if applicable)
+
+Browser automation tools available via MCP: Puppeteer, Playwright
+"""
+        if domain == "backend":
+            return """
+## Testing Recommendations (Backend API)
+- Run API endpoint tests with curl or httpie
+- Verify HTTP status codes and response formats
+- Test error handling (400, 401, 404, 500 responses)
+- Check database operations complete correctly
+- Validate request validation and sanitization
+"""
+        if domain == "frontend":
+            return """
+## Testing Recommendations (Frontend)
+- Run `npm test` / `npm run lint` before completing
+- Verify components render without errors
+- Test user interactions (clicks, form submissions)
+- Check accessibility (keyboard navigation, screen readers)
+- Validate responsive layouts
+"""
+        return """
+## Testing Recommendations (CLI/Tooling)
+- Run the CLI with `--help` to verify it works
+- Test common use cases with sample inputs
+- Verify error messages are helpful
+- Check exit codes are correct
+"""
+
+    @staticmethod
+    def _build_web_app_context() -> str:
+        return """
+## Web Application Guardrails
+- **End-to-end testing is MANDATORY**: Use browser automation (Puppeteer/Playwright) to verify features work as a user would experience them.
+- Start the dev server BEFORE testing any UI features.
+- Test all user flows: authentication, CRUD operations, form submissions, error states.
+- Verify both frontend AND backend work together correctly.
+- Check browser console for errors and network failures.
+- Maintain performance budgets (<3s page load, <200ms API responses).
+- Ensure accessibility (ARIA labels, keyboard navigation).
+
+## Testing Protocol for Web Apps
+1. Run `init.sh` (or equivalent) to start the dev server
+2. Use browser automation to navigate to http://localhost:PORT
+3. Execute the feature being implemented
+4. Verify the expected outcome in the browser
+5. Take screenshots as evidence
+6. Only mark complete after end-to-end verification passes
+""".strip()
 
     @staticmethod
     def _build_ds_context(project_root: Path) -> str:
@@ -122,7 +247,11 @@ class DomainContext:
 
         rows = []
         for file_path in sorted(data_dir.glob("**/*")):
-            if not file_path.is_file() or file_path.suffix.lower() not in {".csv", ".parquet", ".json"}:
+            if not file_path.is_file() or file_path.suffix.lower() not in {
+                ".csv",
+                ".parquet",
+                ".json",
+            }:
                 continue
             size_kb = round(file_path.stat().st_size / 1024, 1)
             rows.append(f"- {file_path.relative_to(project_root)} ({size_kb} KB)")

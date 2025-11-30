@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from enum import Enum
 
-TASK_ID_PATTERN = re.compile(r'\btask-\d+\b', re.IGNORECASE)
+TASK_ID_PATTERN = re.compile(r"\btask-\d+\b", re.IGNORECASE)
 
 
 class ChangeType(str, Enum):
     """Types of changes that can be logged."""
+
     ADDED = "Added"
     CHANGED = "Changed"
     FIXED = "Fixed"
@@ -22,6 +23,7 @@ class ChangeType(str, Enum):
 
 class VersionBump(str, Enum):
     """Semantic version bump types."""
+
     MAJOR = "major"  # Breaking changes
     MINOR = "minor"  # New features, backward compatible
     PATCH = "patch"  # Bug fixes, minor changes
@@ -68,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         content = self.changelog_file.read_text()
 
         # Find first version header like ## [1.2.3]
-        match = re.search(r'##\s+\[(\d+)\.(\d+)\.(\d+)\]', content)
+        match = re.search(r"##\s+\[(\d+)\.(\d+)\.(\d+)\]", content)
 
         if match:
             return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
@@ -137,29 +139,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 """
 
         # Insert after "## [Unreleased]" section
-        unreleased_pattern = r'(## \[Unreleased\]\s*\n)'
+        unreleased_pattern = r"(## \[Unreleased\]\s*\n)"
 
         if re.search(unreleased_pattern, content):
             # Insert after Unreleased section
             updated_content = re.sub(
-                unreleased_pattern,
-                f"\\1\n{new_section}",
-                content,
-                count=1
+                unreleased_pattern, f"\\1\n{new_section}", content, count=1
             )
         else:
             # Fallback: insert at top after header
-            lines = content.split('\n')
+            lines = content.split("\n")
             # Find where to insert (after main header and format description)
             insert_idx = 0
             for i, line in enumerate(lines):
-                if line.startswith('## ['):
+                if line.startswith("## ["):
                     insert_idx = i
                     break
 
             if insert_idx > 0:
                 lines.insert(insert_idx, new_section.rstrip())
-                updated_content = '\n'.join(lines)
+                updated_content = "\n".join(lines)
             else:
                 # Just append to end
                 updated_content = content + "\n" + new_section
@@ -191,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         formatted_desc = description
 
         # Find the most recent version section
-        version_pattern = r'(## \[\d+\.\d+\.\d+\][^\n]*\n)'
+        version_pattern = r"(## \[\d+\.\d+\.\d+\][^\n]*\n)"
         match = re.search(version_pattern, content)
 
         if not match:
@@ -204,8 +203,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
         # Extract content after version header
         version_start = match.end()
-        next_version = re.search(r'## \[', content[version_start:])
-        version_end = version_start + next_version.start() if next_version else len(content)
+        next_version = re.search(r"## \[", content[version_start:])
+        version_end = (
+            version_start + next_version.start() if next_version else len(content)
+        )
 
         version_content = content[version_start:version_end]
 
@@ -214,13 +215,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             # Add to existing section
             section_pattern = f"({re.escape(section_header)}\n)"
             updated_section = f"\\1- {formatted_desc}\n"
-            version_content = re.sub(section_pattern, updated_section, version_content, count=1)
+            version_content = re.sub(
+                section_pattern, updated_section, version_content, count=1
+            )
         else:
             # Add new section at beginning of version
-            version_content = f"\n{section_header}\n- {formatted_desc}\n" + version_content
+            version_content = (
+                f"\n{section_header}\n- {formatted_desc}\n" + version_content
+            )
 
         # Reconstruct content
-        updated_content = content[:version_start] + version_content + content[version_end:]
+        updated_content = (
+            content[:version_start] + version_content + content[version_end:]
+        )
         self.changelog_file.write_text(updated_content)
 
     def _ensure_human_description(self, description: str) -> None:
@@ -249,9 +256,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
         # Extract Unreleased section
         unreleased_match = re.search(
-            r'## \[Unreleased\](.*?)(?=## \[|\Z)',
-            content,
-            re.DOTALL
+            r"## \[Unreleased\](.*?)(?=## \[|\Z)", content, re.DOTALL
         )
 
         if not unreleased_match:
@@ -260,5 +265,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         unreleased_content = unreleased_match.group(1)
 
         # Extract bullet points
-        changes = re.findall(r'^- (.+)$', unreleased_content, re.MULTILINE)
+        changes = re.findall(r"^- (.+)$", unreleased_content, re.MULTILINE)
         return changes

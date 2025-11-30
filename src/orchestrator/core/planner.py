@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 from rich.console import Console
 
@@ -12,7 +12,15 @@ from .. import __version__
 from ..models import EventType, Task, TaskStatus
 from ..planning.goals import GoalsManager
 from ..planning.tasks import TaskGraph
-from .contracts import ActorOutcome, ActorStatus, DecisionType, PlanContext, PlanDecision, VerdictStatus, CriticVerdict
+from .contracts import (
+    ActorOutcome,
+    ActorStatus,
+    DecisionType,
+    PlanContext,
+    PlanDecision,
+    VerdictStatus,
+    CriticVerdict,
+)
 from .docs import DocsManager
 from .changelog import ChangelogManager, ChangeType
 from .feedback import FeedbackEntry, FeedbackTracker
@@ -22,6 +30,9 @@ from .replanner import Replanner
 from .reviewer import ReviewFeedback
 from .subagent import Subagent
 from .tester import TestResult
+
+if TYPE_CHECKING:
+    from .progress import ProgressManager
 
 console = Console()
 
@@ -41,6 +52,7 @@ class Planner:
         docs_manager: DocsManager,
         changelog_manager: ChangelogManager,
         replanner: Replanner,
+        progress_manager: "ProgressManager",
         logger: EventLogger,
         domain: Optional[str],
         trace_id: str,
@@ -60,6 +72,7 @@ class Planner:
         self.docs_manager = docs_manager
         self.changelog_manager = changelog_manager
         self.replanner = replanner
+        self.progress_manager = progress_manager
         self.logger = logger
         self.domain = domain
         self.trace_id = trace_id
@@ -78,7 +91,9 @@ class Planner:
         self.feedback_log: List[Dict[str, str]] = []
         self._notes_summary = self.notes_manager.concise_summary()
         self._cached_context = self._build_context()
-        self._last_flush_step: int = -1  # Track step of last flush (-1 means never flushed)
+        self._last_flush_step: int = (
+            -1
+        )  # Track step of last flush (-1 means never flushed)
         self._pending_docs_updates: List[Dict[str, object]] = []
         self._pending_changelog_entries: List[Dict[str, object]] = []
 
@@ -100,6 +115,14 @@ class Planner:
 
     def _build_context(self) -> PlanContext:
         entries = [entry for entry, _ in self._active_user_feedback]
+
+        # Get progress and git context for cross-session orientation
+        progress_summary = self.progress_manager.get_recent_progress(max_entries=3)
+        git_status = self.progress_manager.get_git_status_summary(self.project_root)
+        git_commits = self.progress_manager.get_git_recent_commits(
+            self.project_root, count=5
+        )
+
         return PlanContext(
             notes_summary=self._notes_summary,
             goals=list(self.goals.core_goals),
@@ -108,6 +131,9 @@ class Planner:
             domain=self.domain,
             surgical_mode=self.surgical_mode,
             surgical_paths=list(self.surgical_paths),
+            progress_summary=progress_summary,
+            git_status=git_status,
+            git_recent_commits=git_commits,
         )
 
     # ------------------------------------------------------------------ #
@@ -125,10 +151,14 @@ class Planner:
         task, reasoning = self._select_task_with_reasoning(ready_tasks, step)
 
         if task is None:
-            console.print(f"[yellow]{self._timestamp()} [PLANNER][/yellow] No semantically ready tasks")
+            console.print(
+                f"[yellow]{self._timestamp()} [PLANNER][/yellow] No semantically ready tasks"
+            )
             return None
 
-        console.print(f"[cyan]{self._timestamp()} [PLANNER][/cyan] {task.id}: {reasoning}")
+        console.print(
+            f"[cyan]{self._timestamp()} [PLANNER][/cyan] {task.id}: {reasoning}"
+        )
 
         task.status = TaskStatus.IN_PROGRESS
         task.attempt_count += 1
@@ -162,10 +192,14 @@ class Planner:
                 return (None, reasoning)
 
         # Multiple ready tasks - use Claude to select
-        completed = [t for t in self.tasks._tasks.values() if t.status == TaskStatus.COMPLETE]
+        completed = [
+            t for t in self.tasks._tasks.values() if t.status == TaskStatus.COMPLETE
+        ]
         incomplete = [
-            t for t in self.tasks._tasks.values()
-            if t.status in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.FAILED)
+            t
+            for t in self.tasks._tasks.values()
+            if t.status
+            in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.FAILED)
         ]
 
         task_options = "\n".join(
@@ -173,8 +207,12 @@ class Planner:
             for t in ready_tasks[:10]
         )
 
-        completed_summary = "\n".join(f"- {t.id}: {t.title}" for t in completed[:10]) or "None"
-        incomplete_summary = "\n".join(f"- {t.id}: {t.title}" for t in incomplete[:10]) or "None"
+        completed_summary = (
+            "\n".join(f"- {t.id}: {t.title}" for t in completed[:10]) or "None"
+        )
+        incomplete_summary = (
+            "\n".join(f"- {t.id}: {t.title}" for t in incomplete[:10]) or "None"
+        )
 
         goals_summary = "\n".join(
             f"- {g.description} ({'ACHIEVED' if g.achieved else 'PENDING'})"
@@ -244,7 +282,9 @@ Respond with EXACTLY this JSON:
         # Fallback: return highest priority non-review task
         for t in ready_tasks:
             title_lower = t.title.lower()
-            if not any(kw in title_lower for kw in ("review", "verify", "final", "check")):
+            if not any(
+                kw in title_lower for kw in ("review", "verify", "final", "check")
+            ):
                 return (t, f"Fallback: {t.title} (non-review task)")
 
         return (ready_tasks[0], f"Fallback: {ready_tasks[0].title}")
@@ -254,23 +294,36 @@ Respond with EXACTLY this JSON:
         title_lower = task.title.lower()
 
         # Quick heuristic for obvious review/final tasks
-        review_keywords = ["final review", "verify", "validation", "check that", "ensure"]
+        review_keywords = [
+            "final review",
+            "verify",
+            "validation",
+            "check that",
+            "ensure",
+        ]
         is_review_task = any(kw in title_lower for kw in review_keywords)
 
         if not is_review_task:
             return (True, "Implementation task, ready")
 
         # Review task - check if content exists
-        completed = [t for t in self.tasks._tasks.values() if t.status == TaskStatus.COMPLETE]
+        completed = [
+            t for t in self.tasks._tasks.values() if t.status == TaskStatus.COMPLETE
+        ]
         incomplete = [
-            t for t in self.tasks._tasks.values()
-            if t.status in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.FAILED)
+            t
+            for t in self.tasks._tasks.values()
+            if t.status
+            in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.FAILED)
             and t.id != task.id
         ]
 
         # If most tasks are still incomplete, review is premature
         if len(completed) < len(incomplete):
-            return (False, f"Review task but {len(incomplete)} tasks still incomplete vs {len(completed)} complete")
+            return (
+                False,
+                f"Review task but {len(incomplete)} tasks still incomplete vs {len(completed)} complete",
+            )
 
         return (True, "Review task, prerequisites appear complete")
 
@@ -295,7 +348,9 @@ Respond with EXACTLY this JSON:
             return
 
         if verdict.status == VerdictStatus.PASS:
-            review_summary = verdict.review.summary if verdict.review else verdict.summary
+            review_summary = (
+                verdict.review.summary if verdict.review else verdict.summary
+            )
             task.status = TaskStatus.COMPLETE
             if review_summary:
                 task.summary.append(review_summary)
@@ -303,6 +358,10 @@ Respond with EXACTLY this JSON:
             self._record_feedback(task, outcome.tests, verdict)
             self._queue_docs_update(task, verdict, success=True)
             self._maybe_flush_docs_updates(decision.step)
+            # Record progress for cross-session continuity
+            self._record_progress(
+                task, "COMPLETED", review_summary or "Task completed", decision.step
+            )
             self._save_tasks()
             return
 
@@ -323,9 +382,13 @@ Respond with EXACTLY this JSON:
 
         if task.attempt_count >= task.max_attempts:
             task.status = TaskStatus.FAILED
-            self._handle_replan(task, verdict, outcome.tests, decision.metadata.get("replan_depth", 0))
+            self._record_progress(task, "FAILED", next_hint, decision.step)
+            self._handle_replan(
+                task, verdict, outcome.tests, decision.metadata.get("replan_depth", 0)
+            )
         else:
             task.status = TaskStatus.BACKLOG
+            self._record_progress(task, "RETRY_NEEDED", next_hint, decision.step)
 
         self._save_tasks()
 
@@ -346,7 +409,9 @@ Respond with EXACTLY this JSON:
             "review_status": review.status if review else verdict.status.value.upper(),
             "review_summary": review.summary if review else verdict.summary,
             "tests": self._serialize_tests(tests),
-            "next_steps": review.next_steps if review and review.next_steps else verdict.summary,
+            "next_steps": review.next_steps
+            if review and review.next_steps
+            else verdict.summary,
             "critic_summary": verdict.critic_summary or verdict.summary,
         }
         self.feedback_log.append(entry)
@@ -363,7 +428,42 @@ Respond with EXACTLY this JSON:
             for res in tests
         ]
 
-    def _queue_docs_update(self, task: Task, verdict: CriticVerdict, success: bool) -> None:
+    def _record_progress(
+        self, task: Task, status: str, summary: str, step: int
+    ) -> None:
+        """Record task progress to PROGRESS.md for cross-session continuity."""
+        # Get changed files from git for context
+        changed_files = self._get_changed_files()
+        self.progress_manager.append_task_progress(
+            task_id=task.id,
+            task_title=task.title,
+            status=status,
+            summary=summary[:200] if summary else "No summary",
+            step=step,
+            files_changed=changed_files[:10] if changed_files else None,
+        )
+
+    def _get_changed_files(self) -> List[str]:
+        """Get list of changed files from git."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().split("\n")
+        except Exception:
+            pass
+        return []
+
+    def _queue_docs_update(
+        self, task: Task, verdict: CriticVerdict, success: bool
+    ) -> None:
         """Queue docs and changelog updates for batch processing."""
         review = verdict.review
 
@@ -372,7 +472,9 @@ Respond with EXACTLY this JSON:
             title_lower = task.title.lower()
             if "fix" in title_lower or "bug" in title_lower:
                 change_type = ChangeType.FIXED
-            elif any(keyword in title_lower for keyword in ("add", "implement", "create")):
+            elif any(
+                keyword in title_lower for keyword in ("add", "implement", "create")
+            ):
                 change_type = ChangeType.ADDED
             elif any(keyword in title_lower for keyword in ("remove", "delete")):
                 change_type = ChangeType.REMOVED
@@ -382,22 +484,26 @@ Respond with EXACTLY this JSON:
             review_snippet = (review.summary or "").strip()
             desc = f"{task.title}" + (f" — {review_snippet}" if review_snippet else "")
 
-            self._pending_changelog_entries.append({
-                "change_type": change_type,
-                "description": desc,
-                "task_id": task.id,
-            })
+            self._pending_changelog_entries.append(
+                {
+                    "change_type": change_type,
+                    "description": desc,
+                    "task_id": task.id,
+                }
+            )
 
         # Queue the docs update info for batch processing
         review_summary = review.summary if review else verdict.summary
         next_steps = review.next_steps if review else verdict.summary
 
-        self._pending_docs_updates.append({
-            "task": task,
-            "success": success,
-            "review_summary": review_summary,
-            "next_steps": next_steps,
-        })
+        self._pending_docs_updates.append(
+            {
+                "task": task,
+                "success": success,
+                "review_summary": review_summary,
+                "next_steps": next_steps,
+            }
+        )
 
     def _maybe_flush_docs_updates(self, current_step: int) -> None:
         """Flush pending docs/changelog updates if step interval reached.
@@ -437,9 +543,13 @@ Respond with EXACTLY this JSON:
                         description=entry["description"],
                         task_id=entry["task_id"],
                     )
-                    console.print(f"[dim]{self._timestamp()} [CHANGELOG][/dim] Updated ({version})")
+                    console.print(
+                        f"[dim]{self._timestamp()} [CHANGELOG][/dim] Updated ({version})"
+                    )
                 except Exception as exc:
-                    console.print(f"[yellow]{self._timestamp()} [CHANGELOG][/yellow] Failed: {exc}")
+                    console.print(
+                        f"[yellow]{self._timestamp()} [CHANGELOG][/yellow] Failed: {exc}"
+                    )
             self._pending_changelog_entries = []
 
         if not self._pending_docs_updates:
@@ -464,13 +574,13 @@ Respond with EXACTLY this JSON:
 
             task_summary = f"""
 ## Task: {task.title}
-**Status**: {'✓ SUCCESS' if success else '✗ FAILED'}
+**Status**: {"✓ SUCCESS" if success else "✗ FAILED"}
 **Review**: {review_summary}
 
 ## Summary
-{chr(10).join(f'- {s}' for s in task.summary[-3:])}
+{chr(10).join(f"- {s}" for s in task.summary[-3:])}
 
-{f"## Next Steps{chr(10)}{next_steps}" if next_steps else ''}
+{f"## Next Steps{chr(10)}{next_steps}" if next_steps else ""}
 """
             summaries.append(task_summary)
 

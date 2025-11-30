@@ -1,7 +1,7 @@
 """Documentation manager for maintaining project docs/ directory."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
 from .subagent import Subagent
@@ -9,23 +9,70 @@ from .logger import EventLogger
 from ..models import Task
 
 
+# Domains that have software components worth documenting individually
+COMPONENT_DOMAINS = {"backend", "frontend", "web_app", "tooling"}
+
+# Domains that are research/data focused (no traditional software components)
+RESEARCH_DOMAINS = {"data_science", "research"}
+
+
 class DocsManager:
     """Manages automatic documentation generation and updates."""
 
-    def __init__(self, project_root: Path, logger: EventLogger):
+    def __init__(
+        self,
+        project_root: Path,
+        logger: EventLogger,
+        domain: Optional[str] = None,
+    ):
         self.project_root = project_root
         self.docs_dir = project_root / "docs"
         self.logger = logger
+        self.domain = domain
+        self._has_components = self._should_have_components()
+
+    def _should_have_components(self) -> bool:
+        """Determine if this project should have a docs/components/ directory."""
+        if self.domain in COMPONENT_DOMAINS:
+            return True
+        if self.domain in RESEARCH_DOMAINS:
+            return False
+
+        # Heuristic: check for code files that suggest components
+        code_indicators = [
+            list(self.project_root.glob("**/*.py")),
+            list(self.project_root.glob("**/*.js")),
+            list(self.project_root.glob("**/*.ts")),
+            list(self.project_root.glob("**/*.go")),
+            list(self.project_root.glob("**/*.rs")),
+        ]
+
+        # If we have substantial code files, likely has components
+        total_code_files = sum(len(files) for files in code_indicators)
+        return total_code_files > 5
 
     def initialize(self) -> None:
-        """Create initial docs/ directory structure if it doesn't exist."""
+        """Create initial docs/ directory structure based on domain."""
         if not self.docs_dir.exists():
             self.docs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create initial docs README
+        # Build domain-appropriate docs README
         docs_readme = self.docs_dir / "README.md"
         if not docs_readme.exists():
-            docs_readme.write_text("""# Project Documentation
+            docs_readme.write_text(self._generate_docs_readme())
+
+        # Ensure top-level project README exists
+        project_readme = self.project_root / "README.md"
+        if not project_readme.exists():
+            project_readme.write_text(self._generate_project_readme())
+
+        # Only create components/ for domains that need it
+        if self._has_components:
+            (self.docs_dir / "components").mkdir(exist_ok=True)
+
+    def _generate_docs_readme(self) -> str:
+        """Generate domain-appropriate docs/README.md content."""
+        base_structure = """# Project Documentation
 
 ## Overview
 
@@ -34,10 +81,20 @@ This directory contains comprehensive documentation for the project.
 ## Documentation Structure
 
 - **README.md** (this file) - Documentation overview and getting started
-- **architecture.md** - System architecture and design decisions
+"""
+
+        if self._has_components:
+            base_structure += """- **architecture.md** - System architecture and design decisions
 - **components/** - Individual component documentation
-- **scripts.md** - How to run scripts and what they do
 - **api.md** - API documentation (if applicable)
+"""
+        else:
+            # Research/data science projects
+            base_structure += """- **research.md** - Research methodology and findings
+- **data.md** - Dataset documentation and sources
+"""
+
+        base_structure += """- **scripts.md** - How to run scripts and what they do
 - **troubleshooting.md** - Common issues and solutions
 
 ## Quick Start
@@ -47,12 +104,12 @@ This directory contains comprehensive documentation for the project.
 ## Contributing
 
 [To be populated]
-""")
+"""
+        return base_structure
 
-        # Ensure top-level project README exists
-        project_readme = self.project_root / "README.md"
-        if not project_readme.exists():
-            project_readme.write_text("""# Project Overview
+    def _generate_project_readme(self) -> str:
+        """Generate domain-appropriate top-level README."""
+        return """# Project Overview
 
 ## Quick Start
 
@@ -65,9 +122,7 @@ Explain how to run the project here.
 ## Configuration
 
 Document environment variables or config files here.
-""")
-
-        (self.docs_dir / "components").mkdir(exist_ok=True)
+"""
 
     def update_after_task(
         self,
@@ -79,26 +134,10 @@ Document environment variables or config files here.
         parent_trace_id: str,
         log_workspace: Optional[Path] = None,
     ) -> Dict[str, Any]:
-        """
-        Update documentation after a task completes.
-
-        Args:
-            task: The completed task
-            success: Whether task succeeded
-            changes_summary: Summary of what changed
-            workspace: Workspace path
-            step: Current orchestrator step
-            parent_trace_id: Parent trace ID for logging
-
-        Returns:
-            Dict with update results
-        """
+        """Update documentation after a task completes."""
         self.initialize()
 
-        # Build context about the task and changes
         context = self._build_task_context(task, success, changes_summary)
-
-        # Determine what documentation needs updating
         docs_to_update = self._identify_docs_to_update(task, changes_summary)
 
         instruction = f"""You are the documentation maintainer. Update project documentation based on the completed task.
@@ -106,7 +145,7 @@ Document environment variables or config files here.
 ## Task Information
 - **Task ID**: {task.id}
 - **Title**: {task.title}
-- **Status**: {'SUCCESS' if success else 'FAILED'}
+- **Status**: {"SUCCESS" if success else "FAILED"}
 - **Description**: {task.description}
 
 ## Changes Made
@@ -128,8 +167,7 @@ Document environment variables or config files here.
 - Include code examples where helpful
 - Document "why" decisions were made, not just "what"
 - For failed tasks, document what was attempted and why it failed
-- Update component relationships if architecture changed
-- Ensure scripts.md accurately describes how to run everything
+{self._get_domain_guidelines()}
 
 ## Output
 
@@ -137,7 +175,6 @@ Update the relevant documentation files. Be thorough but concise.
 Focus on making the documentation useful for someone new to the project.
 """
 
-        # Spawn documentation subagent
         agent = Subagent(
             task_id=f"docs-{task.id}",
             task_description=instruction,
@@ -146,7 +183,7 @@ Focus on making the documentation useful for someone new to the project.
             logger=self.logger,
             step=step,
             workspace=workspace,
-            max_turns=20,  # Docs updates may need more turns
+            max_turns=20,
             model="sonnet",
             log_workspace=log_workspace or workspace,
         )
@@ -159,17 +196,27 @@ Focus on making the documentation useful for someone new to the project.
             "output": result.get("output", ""),
         }
 
+    def _get_domain_guidelines(self) -> str:
+        """Get domain-specific documentation guidelines."""
+        if self._has_components:
+            return """- Update component relationships if architecture changed
+- Create individual component docs in docs/components/ for new modules
+- Ensure scripts.md accurately describes how to run everything"""
+        else:
+            return """- Update research methodology if approach changed
+- Document data sources and transformations
+- Keep findings and conclusions up to date"""
+
     def _build_task_context(
-        self,
-        task: Task,
-        success: bool,
-        changes_summary: str
+        self, task: Task, success: bool, changes_summary: str
     ) -> str:
         """Build context string about the task for the docs agent."""
         lines = [
             "## Current Project State",
             "",
             f"Task {task.id} ({'succeeded' if success else 'failed'})",
+            f"Domain: {self.domain or 'general'}",
+            f"Has components: {self._has_components}",
             "",
             "## Recent Changes",
             changes_summary,
@@ -177,13 +224,14 @@ Focus on making the documentation useful for someone new to the project.
         ]
 
         if task.review_feedback:
-            lines.extend([
-                "## Review Feedback",
-                *[f"- {feedback}" for feedback in task.review_feedback[-3:]],
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Review Feedback",
+                    *[f"- {feedback}" for feedback in task.review_feedback[-3:]],
+                    "",
+                ]
+            )
 
-        # List existing documentation
         if self.docs_dir.exists():
             lines.append("## Existing Documentation Files")
             for doc_file in sorted(self.docs_dir.rglob("*.md")):
@@ -192,42 +240,70 @@ Focus on making the documentation useful for someone new to the project.
 
         return "\n".join(lines)
 
-    def _identify_docs_to_update(
-        self,
-        task: Task,
-        changes_summary: str
-    ) -> list[str]:
-        """
-        Identify which documentation files likely need updates.
-        Returns list of file paths relative to project root.
-        """
+    def _identify_docs_to_update(self, task: Task, changes_summary: str) -> List[str]:
+        """Identify which documentation files likely need updates."""
         docs_to_update = []
+        combined_text = f"{task.description.lower()} {changes_summary.lower()}"
 
         # Always consider main docs
         docs_to_update.append("docs/README.md")
 
-        # Check if architectural changes were made
-        arch_keywords = ["architecture", "design", "structure", "component", "module"]
-        if any(kw in task.description.lower() or kw in changes_summary.lower() for kw in arch_keywords):
-            docs_to_update.append("docs/architecture.md")
+        # Architecture/design changes (only for component-based projects)
+        if self._has_components:
+            arch_keywords = ["architecture", "design", "structure", "refactor"]
+            if any(kw in combined_text for kw in arch_keywords):
+                docs_to_update.append("docs/architecture.md")
 
-        # Check if scripts were added/modified
+            # Component changes - route to docs/components/
+            component_keywords = [
+                "component",
+                "module",
+                "class",
+                "service",
+                "handler",
+                "controller",
+                "model",
+            ]
+            if any(kw in combined_text for kw in component_keywords):
+                docs_to_update.append("docs/components/")
+
+            # API changes
+            api_keywords = ["api", "endpoint", "route", "request", "response"]
+            if any(kw in combined_text for kw in api_keywords):
+                docs_to_update.append("docs/api.md")
+
+        # Research/data changes (for non-component projects)
+        if not self._has_components:
+            research_keywords = [
+                "research",
+                "analysis",
+                "finding",
+                "conclusion",
+                "hypothesis",
+            ]
+            if any(kw in combined_text for kw in research_keywords):
+                docs_to_update.append("docs/research.md")
+
+            data_keywords = ["data", "dataset", "source", "collection", "preprocessing"]
+            if any(kw in combined_text for kw in data_keywords):
+                docs_to_update.append("docs/data.md")
+
+        # Scripts (universal)
         script_keywords = ["script", "run", "execute", "command", ".py", ".sh"]
-        if any(kw in task.description.lower() or kw in changes_summary.lower() for kw in script_keywords):
+        if any(kw in combined_text for kw in script_keywords):
             docs_to_update.append("docs/scripts.md")
 
-        # Check if API changes were made
-        api_keywords = ["api", "endpoint", "route", "request", "response"]
-        if any(kw in task.description.lower() or kw in changes_summary.lower() for kw in api_keywords):
-            docs_to_update.append("docs/api.md")
-
-        # Check if troubleshooting needed (for failures)
-        if "error" in changes_summary.lower() or "failed" in changes_summary.lower():
+        # Troubleshooting (for failures)
+        if (
+            "error" in combined_text
+            or "failed" in combined_text
+            or not task.acceptance_criteria
+        ):
             docs_to_update.append("docs/troubleshooting.md")
 
         return docs_to_update
 
-    def _format_docs_list(self, docs_list: list[str]) -> str:
+    def _format_docs_list(self, docs_list: List[str]) -> str:
         """Format list of docs to update as markdown."""
         if not docs_list:
             return "- All documentation in `docs/` directory"
@@ -255,7 +331,7 @@ Focus on making the documentation useful for someone new to the project.
 ## Current Task
 - ID: {recent_task.id}
 - Title: {recent_task.title}
-- Status: {'SUCCESS' if success else 'FAILED'}
+- Status: {"SUCCESS" if success else "FAILED"}
 - Description: {recent_task.description}
 
 ## Requirements
@@ -278,7 +354,9 @@ Focus on making the documentation useful for someone new to the project.
             workspace=self.project_root,
             max_turns=12,
             model="sonnet",
-            log_workspace=self.project_root / ".orchestrator" if (self.project_root / ".orchestrator").exists() else self.project_root,
+            log_workspace=self.project_root / ".orchestrator"
+            if (self.project_root / ".orchestrator").exists()
+            else self.project_root,
         )
 
         agent.execute()
@@ -304,24 +382,33 @@ Focus on making the documentation useful for someone new to the project.
         parent_trace_id: str,
         log_workspace: Optional[Path] = None,
     ) -> Dict[str, Any]:
-        """
-        Generate comprehensive documentation for the entire project.
-        Useful at project completion or major milestones.
-        """
+        """Generate comprehensive documentation for the entire project."""
         self.initialize()
 
-        instruction = """You are the documentation writer. Generate comprehensive documentation for this project.
+        if self._has_components:
+            docs_structure = """1. **docs/README.md** - Overview, quick start, project structure
+2. **docs/architecture.md** - System design, component relationships, key decisions
+3. **docs/scripts.md** - All scripts, how to run them, what they do, expected output
+4. **docs/api.md** - API endpoints, request/response formats (if applicable)
+5. **docs/troubleshooting.md** - Common issues, error messages, solutions
+6. **docs/components/** - Individual files for major components"""
+        else:
+            docs_structure = """1. **docs/README.md** - Overview, quick start, project structure
+2. **docs/research.md** - Research methodology, approach, key findings
+3. **docs/data.md** - Data sources, preprocessing, analysis
+4. **docs/scripts.md** - All scripts, how to run them, what they do
+5. **docs/troubleshooting.md** - Common issues, error messages, solutions"""
+
+        instruction = f"""You are the documentation writer. Generate comprehensive documentation for this project.
+
+## Project Domain
+{self.domain or "general"} (has_components: {self._has_components})
 
 ## Your Task
 
 Create/update complete documentation in the `docs/` directory:
 
-1. **docs/README.md** - Overview, quick start, project structure
-2. **docs/architecture.md** - System design, component relationships, key decisions
-3. **docs/scripts.md** - All scripts, how to run them, what they do, expected output
-4. **docs/api.md** - API endpoints, request/response formats (if applicable)
-5. **docs/troubleshooting.md** - Common issues, error messages, solutions
-6. **docs/components/** - Individual files for major components
+{docs_structure}
 
 ## Guidelines
 
@@ -346,7 +433,7 @@ Create comprehensive, accurate, and useful documentation.
             logger=self.logger,
             step=step,
             workspace=workspace,
-            max_turns=30,  # Comprehensive docs need more turns
+            max_turns=30,
             model="sonnet",
             log_workspace=log_workspace or workspace,
         )
@@ -363,16 +450,27 @@ Create comprehensive, accurate, and useful documentation.
         lines = [
             "## Project Structure",
             "",
+            f"Domain: {self.domain or 'general'}",
+            f"Has components: {self._has_components}",
+            "",
             "Analyze the codebase to understand:",
             "- Main entry points and how to run the project",
-            "- Key components and their relationships",
-            "- External dependencies and requirements",
-            "- Configuration files and environment variables",
-            "- Testing strategy and how to run tests",
-            "",
         ]
 
-        # Add existing docs info
+        if self._has_components:
+            lines.append("- Key components and their relationships")
+        else:
+            lines.append("- Research methodology and data analysis approach")
+
+        lines.extend(
+            [
+                "- External dependencies and requirements",
+                "- Configuration files and environment variables",
+                "- Testing strategy and how to run tests",
+                "",
+            ]
+        )
+
         if self.docs_dir.exists():
             lines.append("## Existing Documentation")
             for doc_file in sorted(self.docs_dir.rglob("*.md")):

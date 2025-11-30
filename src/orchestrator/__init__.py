@@ -1,5 +1,5 @@
 """Claude Code orchestrator package."""
 
-__version__ = "0.10.7"
+__version__ = "0.11.2"
 
 __all__ = ["__version__"]

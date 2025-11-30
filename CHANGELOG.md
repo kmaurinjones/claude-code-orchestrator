@@ -5,6 +5,64 @@ All notable changes to the Agentic Orchestrator project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2025-11-30
+
+### Fixed
+- **Goal Gap Analyzer**: Orchestrator no longer exits with NO_TASKS_AVAILABLE when tasks complete but goals remain unmet
+  - New `GoalGapAnalyzer` class analyzes unmet goals and generates new tasks to address the gap
+  - Invoked automatically when all tasks are complete/failed but core goals are not achieved
+  - Maximum 5 gap analysis attempts per session to prevent infinite loops
+  - Generates up to 5 new tasks per analysis cycle
+  - Subagent max_turns increased to 20 with prompt optimized for efficient JSON output
+
+## [0.11.1] - 2025-11-28
+
+### Fixed
+- **DocsManager domain-aware initialization**: `docs/components/` directory now only created for code-based projects
+  - Component domains: backend, frontend, web_app, tooling (creates components/)
+  - Research domains: data_science, research (creates research.md, data.md instead)
+  - Fallback heuristic: checks for >5 code files to determine if components/ needed
+- **docs/components/ routing**: `_identify_docs_to_update()` now correctly routes component-related tasks to `docs/components/`
+- **Domain-specific docs structure**: Research projects get `research.md` + `data.md` instead of `architecture.md` + `api.md`
+
+## [0.11.0] - 2025-11-28
+
+### Added
+- **Session Continuity System**: Implemented PROGRESS.md tracking for cross-context-window continuity
+  - Actors now read recent progress at session start to understand previous work
+  - Progress is automatically recorded after task completion/failure
+  - Git status and recent commits included in actor context for orientation
+
+- **Structured Feature Tracking**: Added features.json alongside GOALS.md
+  - JSON-based feature list with `passes: boolean` fields
+  - Strong protection against actors modifying feature definitions
+  - Automatic sync between features.json and GOALS.md
+
+- **"Get Bearings" Protocol**: Actors now follow explicit startup checklist
+  - Check git status to see current changes
+  - Read git log for recent commits
+  - Review progress from previous sessions
+  - Verify nothing is broken before starting new work
+
+- **"Leave Clean State" Protocol**: Actors instructed to leave merge-ready code
+  - Commit changes with descriptive messages
+  - No half-implemented code left behind
+  - Clean up debug artifacts before completion
+
+- **Domain-Aware Testing Hooks**: Web applications now receive browser automation guidance
+  - New `web_app` domain detection for full-stack projects
+  - Explicit instructions to use Puppeteer/Playwright for end-to-end UI testing
+  - Testing protocol emphasizing "verify as a user would"
+
+- **init.sh Creation**: Interview phase now creates project initialization script
+  - Sets up development environment reproducibly
+  - Allows agents to quickly start dev servers at session beginning
+
+### Changed
+- **Acceptance Criteria Enforcement**: Strengthened language to prevent actors from modifying verification checks
+  - Added explicit "IT IS UNACCEPTABLE TO REMOVE, MODIFY, OR SKIP THESE CRITERIA" warning
+- **Actor Prompt Structure**: Reorganized into clear STEP 1/2/3 format for get bearings/implement/clean up
+
 ## [0.10.7] - 2025-11-24
 
 ### Changed

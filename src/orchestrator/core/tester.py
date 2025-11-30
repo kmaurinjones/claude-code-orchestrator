@@ -63,11 +63,13 @@ class Tester:
                 results.append(self._check_data_quality(check))
             else:
                 # Unknown check type
-                results.append(TestResult(
-                    check=check,
-                    passed=False,
-                    message=f"Unknown check type: {check.type}",
-                ))
+                results.append(
+                    TestResult(
+                        check=check,
+                        passed=False,
+                        message=f"Unknown check type: {check.type}",
+                    )
+                )
 
         return results
 
@@ -242,7 +244,11 @@ class Tester:
             content = file_path.read_text()
             count = self._count_words(content)
         except Exception as exc:
-            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Error reading file {check.target}: {exc}",
+            )
 
         if min_words is not None and count < int(min_words):
             return TestResult(
@@ -294,9 +300,15 @@ class Tester:
         try:
             content = file_path.read_text()
         except Exception as exc:
-            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Error reading file {check.target}: {exc}",
+            )
 
-        section_text = self._extract_section(content, heading, metadata.get("next_heading_pattern"))
+        section_text = self._extract_section(
+            content, heading, metadata.get("next_heading_pattern")
+        )
         if section_text is None:
             return TestResult(
                 check=check,
@@ -348,7 +360,11 @@ class Tester:
         try:
             content = file_path.read_text()
         except Exception as exc:
-            return TestResult(check=check, passed=False, message=f"Error reading file {check.target}: {exc}")
+            return TestResult(
+                check=check,
+                passed=False,
+                message=f"Error reading file {check.target}: {exc}",
+            )
 
         offending = []
         for phrase in phrases:
@@ -372,7 +388,9 @@ class Tester:
             message="No placeholder text detected.",
         )
 
-    def _find_pattern_matches(self, pattern: str, content: str, metadata: Optional[Dict[str, Any]]) -> int:
+    def _find_pattern_matches(
+        self, pattern: str, content: str, metadata: Optional[Dict[str, Any]]
+    ) -> int:
         """Return number of regex matches honoring optional flags."""
         flags = re.MULTILINE
         if metadata and metadata.get("case_insensitive"):
@@ -385,7 +403,9 @@ class Tester:
         return len(text.split())
 
     @staticmethod
-    def _extract_section(content: str, heading: str, next_heading_pattern: Optional[str]) -> Optional[str]:
+    def _extract_section(
+        content: str, heading: str, next_heading_pattern: Optional[str]
+    ) -> Optional[str]:
         """Return markdown section text following heading until the next peer heading."""
         pattern = re.compile(rf"^{re.escape(heading)}\s*$", re.MULTILINE)
         match = pattern.search(content)
@@ -394,7 +414,11 @@ class Tester:
 
         start = match.end()
         remainder = content[start:]
-        next_pattern = re.compile(next_heading_pattern, re.MULTILINE) if next_heading_pattern else re.compile(r"^##\s", re.MULTILINE)
+        next_pattern = (
+            re.compile(next_heading_pattern, re.MULTILINE)
+            if next_heading_pattern
+            else re.compile(r"^##\s", re.MULTILINE)
+        )
         next_match = next_pattern.search(remainder)
         if next_match:
             return remainder[: next_match.start()].strip()

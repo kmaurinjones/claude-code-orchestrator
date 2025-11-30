@@ -65,12 +65,14 @@ class CompletionSummary:
         )
 
         if usage_instructions:
-            console.print(Panel(
-                Markdown(usage_instructions),
-                title="[bold green]How to Use This Project[/bold green]",
-                border_style="green",
-                padding=(1, 2),
-            ))
+            console.print(
+                Panel(
+                    Markdown(usage_instructions),
+                    title="[bold green]How to Use This Project[/bold green]",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
 
         # Display goals summary
         self._display_goals_summary(goals)
@@ -95,7 +97,11 @@ class CompletionSummary:
         )
 
         recent_task_lines = self._recent_completed_tasks(tasks)
-        task_summary = "\n".join(recent_task_lines) if recent_task_lines else "- No completed tasks recorded yet."
+        task_summary = (
+            "\n".join(recent_task_lines)
+            if recent_task_lines
+            else "- No completed tasks recorded yet."
+        )
 
         task_stats = self._task_statistics(tasks)
         goals_done = len([goal for goal in goals if goal.achieved])
@@ -261,20 +267,17 @@ Run CLI: `uv run python main.py` (see README.md for options)
     def _recent_completed_tasks(self, tasks: TaskGraph, limit: int = 10) -> List[str]:
         """Return textual summaries of recent completed tasks."""
         completed = [
-            task for task in tasks.tasks.values()
-            if task.status == TaskStatus.COMPLETE
+            task for task in tasks.tasks.values() if task.status == TaskStatus.COMPLETE
         ]
-        return [
-            f"- {task.title}: {task.description}"
-            for task in completed[-limit:]
-        ]
+        return [f"- {task.title}: {task.description}" for task in completed[-limit:]]
 
     def _task_statistics(self, tasks: TaskGraph) -> Dict[str, int]:
         all_tasks = list(tasks.tasks.values())
         completed = [t for t in all_tasks if t.status == TaskStatus.COMPLETE]
         failed = [t for t in all_tasks if t.status == TaskStatus.FAILED]
         pending = [
-            t for t in all_tasks
+            t
+            for t in all_tasks
             if t.status in {TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS}
         ]
         return {
@@ -349,7 +352,8 @@ Run CLI: `uv run python main.py` (see README.md for options)
         completed = [t for t in all_tasks if t.status == TaskStatus.COMPLETE]
         failed = [t for t in all_tasks if t.status == TaskStatus.FAILED]
         pending = [
-            t for t in all_tasks
+            t
+            for t in all_tasks
             if t.status in {TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS}
         ]
 
@@ -361,6 +365,10 @@ Run CLI: `uv run python main.py` (see README.md for options)
         if pending:
             console.print(f"  [yellow]⋯ Pending:[/yellow] {len(pending)}")
 
-        console.print(f"\n[dim]Event logs: {self.workspace / 'current' / 'events.jsonl'}[/dim]")
-        console.print(f"[dim]Full history: {self.workspace / 'full_history.jsonl'}[/dim]")
+        console.print(
+            f"\n[dim]Event logs: {self.workspace / 'current' / 'events.jsonl'}[/dim]"
+        )
+        console.print(
+            f"[dim]Full history: {self.workspace / 'full_history.jsonl'}[/dim]"
+        )
         console.print()

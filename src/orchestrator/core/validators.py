@@ -11,6 +11,7 @@ from dataclasses import dataclass
 @dataclass
 class ValidationResult:
     """Result of running a validation check."""
+
     passed: bool
     message: str
     stdout: str = ""
@@ -26,7 +27,9 @@ class HTTPEndpointValidator:
     """Validate HTTP endpoints."""
 
     @staticmethod
-    def validate(target: str, expected: Optional[str], timeout: int = 30) -> ValidationResult:
+    def validate(
+        target: str, expected: Optional[str], timeout: int = 30
+    ) -> ValidationResult:
         """
         Check HTTP endpoint.
 
@@ -59,7 +62,8 @@ class HTTPEndpointValidator:
 
             return ValidationResult(
                 passed=passed,
-                message=f"HTTP {response.status_code}" + (f" (expected {expected})" if expected else ""),
+                message=f"HTTP {response.status_code}"
+                + (f" (expected {expected})" if expected else ""),
                 metadata={"status_code": response.status_code, "url": target},
             )
 
@@ -98,8 +102,9 @@ class MetricThresholdValidator:
             metrics_file = project_root / target
         else:
             # Search for metrics files
-            metrics_files = list(project_root.rglob("*metrics*.json")) + \
-                           list(project_root.rglob("*results*.json"))
+            metrics_files = list(project_root.rglob("*metrics*.json")) + list(
+                project_root.rglob("*results*.json")
+            )
 
             if not metrics_files:
                 return ValidationResult(
@@ -120,7 +125,9 @@ class MetricThresholdValidator:
             )
 
         # Extract metric value
-        metric_name = target.split("/")[-1].replace(".json", "") if "/" in target else target
+        metric_name = (
+            target.split("/")[-1].replace(".json", "") if "/" in target else target
+        )
         metric_value = metrics_data.get(metric_name)
 
         if metric_value is None:
@@ -160,7 +167,11 @@ class MetricThresholdValidator:
         return ValidationResult(
             passed=passed,
             message=f"{metric_name} = {metric_value} (expected {expected})",
-            metadata={"metric": metric_name, "value": metric_value, "threshold": threshold},
+            metadata={
+                "metric": metric_name,
+                "value": metric_value,
+                "threshold": threshold,
+            },
         )
 
 
@@ -192,6 +203,7 @@ class SchemaValidator:
                     data = json.load(f)
                 elif target_path.suffix in (".yaml", ".yml"):
                     import yaml
+
                     data = yaml.safe_load(f)
                 else:
                     return ValidationResult(
@@ -222,6 +234,7 @@ class SchemaValidator:
         # Validate
         try:
             import jsonschema
+
             jsonschema.validate(instance=data, schema=schema)
             return ValidationResult(
                 passed=True,
@@ -243,7 +256,9 @@ class SecurityScanValidator:
     """Run security scans."""
 
     @staticmethod
-    def validate(target: str, expected: Optional[str], project_root: Path, timeout: int = 300) -> ValidationResult:
+    def validate(
+        target: str, expected: Optional[str], project_root: Path, timeout: int = 300
+    ) -> ValidationResult:
         """
         Run security scanner.
 
@@ -338,7 +353,9 @@ class TypeCheckValidator:
     """Run type checkers."""
 
     @staticmethod
-    def validate(target: str, expected: Optional[str], project_root: Path, timeout: int = 300) -> ValidationResult:
+    def validate(
+        target: str, expected: Optional[str], project_root: Path, timeout: int = 300
+    ) -> ValidationResult:
         """
         Run type checker.
 

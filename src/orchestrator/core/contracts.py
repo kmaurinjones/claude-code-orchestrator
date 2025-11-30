@@ -48,6 +48,9 @@ class PlanContext:
     domain: Optional[str]
     surgical_mode: bool
     surgical_paths: List[str]
+    progress_summary: str = ""  # Recent progress from PROGRESS.md
+    git_status: str = ""  # Current git status for orientation
+    git_recent_commits: str = ""  # Recent git commits for context
 
 
 @dataclass

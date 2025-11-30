@@ -13,14 +13,28 @@ from ..models import EventType
 from .logger import EventLogger
 
 
-def _generate_directory_tree(workspace: Path, max_depth: int = 3, max_files: int = 50) -> str:
+def _generate_directory_tree(
+    workspace: Path, max_depth: int = 3, max_files: int = 50
+) -> str:
     """Generate a concise directory tree for context."""
     lines = []
     file_count = 0
 
     # Directories to ignore
-    ignore = {".orchestrator", ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
-              ".ruff_cache", "node_modules", ".next", "dist", "build", ".DS_Store"}
+    ignore = {
+        ".orchestrator",
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        "node_modules",
+        ".next",
+        "dist",
+        "build",
+        ".DS_Store",
+    }
 
     def add_tree(path: Path, prefix: str = "", depth: int = 0):
         nonlocal file_count
@@ -29,7 +43,9 @@ def _generate_directory_tree(workspace: Path, max_depth: int = 3, max_files: int
 
         try:
             items = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name))
-            items = [i for i in items if i.name not in ignore and not i.name.startswith('.')]
+            items = [
+                i for i in items if i.name not in ignore and not i.name.startswith(".")
+            ]
 
             for i, item in enumerate(items):
                 if file_count >= max_files:
@@ -68,11 +84,7 @@ def find_claude_executable() -> Optional[str]:
 
     for path in possible_paths:
         try:
-            result = subprocess.run(
-                [path, "--version"],
-                capture_output=True,
-                timeout=5
-            )
+            result = subprocess.run([path, "--version"], capture_output=True, timeout=5)
             if result.returncode == 0:
                 return path
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -109,7 +121,11 @@ class Subagent:
         self.claude_executable = claude_executable or find_claude_executable()
         self.next_action = next_action
         self.model = model
-        self.log_workspace = Path(log_workspace).resolve() if log_workspace else Path(workspace).resolve()
+        self.log_workspace = (
+            Path(log_workspace).resolve()
+            if log_workspace
+            else Path(workspace).resolve()
+        )
 
     def _log_detailed_execution(
         self,
@@ -118,7 +134,7 @@ class Subagent:
         raw_stderr: str,
         result: Dict[str, Any],
         returncode: int,
-        duration_seconds: float
+        duration_seconds: float,
     ) -> None:
         """Log detailed subagent execution for debugging."""
         log_dir = self.log_workspace / "logs" / "subagents"
@@ -142,10 +158,10 @@ class Subagent:
             "raw_stdout": raw_stdout,
             "raw_stderr": raw_stderr if raw_stderr else None,
             "parsed_result": result,
-            "next_action_feedback": self.next_action
+            "next_action_feedback": self.next_action,
         }
 
-        with open(log_file, 'w') as f:
+        with open(log_file, "w") as f:
             json.dump(detailed_log, f, indent=2)
 
     def execute(self) -> Dict[str, Any]:
@@ -171,12 +187,12 @@ class Subagent:
                 "task": self.task_description,
                 "context_length": len(self.context),
                 "workspace": str(self.workspace),
-                "workspace_cwd": str(self.workspace)  # Debug: show what cwd will be
+                "workspace_cwd": str(self.workspace),  # Debug: show what cwd will be
             },
             trace_id=self.trace_id,
             parent_trace_id=self.parent_trace_id,
             step=self.step,
-                version=__version__
+            version=__version__,
         )
 
         # Build full instruction
@@ -191,22 +207,29 @@ class Subagent:
             # --max-turns = limit conversation length
 
             if not self.claude_executable:
-                raise FileNotFoundError("Claude Code CLI not found. Install it or provide claude_executable path.")
+                raise FileNotFoundError(
+                    "Claude Code CLI not found. Install it or provide claude_executable path."
+                )
 
             result = subprocess.run(
                 [
                     self.claude_executable,
-                    "-p", instruction,
-                    "--output-format", "json",
+                    "-p",
+                    instruction,
+                    "--output-format",
+                    "json",
                     "--dangerously-skip-permissions",
-                    "--add-dir", str(self.workspace.absolute()),
-                    "--max-turns", str(self.max_turns),
-                    "--model", self.model  # Configurable model (haiku by default, sonnet for audits)
+                    "--add-dir",
+                    str(self.workspace.absolute()),
+                    "--max-turns",
+                    str(self.max_turns),
+                    "--model",
+                    self.model,  # Configurable model (haiku by default, sonnet for audits)
                 ],
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 min timeout
-                cwd=str(self.workspace)  # Run in workspace
+                cwd=str(self.workspace),  # Run in workspace
             )
 
             if result.returncode != 0:
@@ -214,7 +237,7 @@ class Subagent:
                     "status": "failed",
                     "error": result.stderr or "Unknown error",
                     "returncode": result.returncode,
-                    "stdout": result.stdout
+                    "stdout": result.stdout,
                 }
 
                 # Log detailed execution for CLI errors
@@ -225,7 +248,7 @@ class Subagent:
                     raw_stderr=result.stderr,
                     result=error_response,
                     returncode=result.returncode,
-                    duration_seconds=duration
+                    duration_seconds=duration,
                 )
 
                 self.logger.log(
@@ -235,7 +258,7 @@ class Subagent:
                     trace_id=self.trace_id,
                     parent_trace_id=self.parent_trace_id,
                     step=self.step,
-                version=__version__
+                    version=__version__,
                 )
 
                 return error_response
@@ -265,7 +288,8 @@ class Subagent:
                     "commands_run": response_data.get("commands_run", []),
                     "blockers": response_data.get("blockers", None),
                     "next_steps": response_data.get("next_steps", None),
-                    "tokens_used": usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+                    "tokens_used": usage.get("input_tokens", 0)
+                    + usage.get("output_tokens", 0),
                 }
 
                 # Log detailed execution
@@ -276,7 +300,7 @@ class Subagent:
                     raw_stderr=result.stderr,
                     result=success_response,
                     returncode=result.returncode,
-                    duration_seconds=duration
+                    duration_seconds=duration,
                 )
 
                 self.logger.log(
@@ -286,7 +310,7 @@ class Subagent:
                     trace_id=self.trace_id,
                     parent_trace_id=self.parent_trace_id,
                     step=self.step,
-                version=__version__
+                    version=__version__,
                 )
 
                 return success_response
@@ -298,7 +322,7 @@ class Subagent:
                     "output": result.stdout,
                     "summary": "Task completed (unstructured output)",
                     "tokens_used": 0,
-                    "parse_error": str(e)
+                    "parse_error": str(e),
                 }
 
                 # Log detailed execution
@@ -309,7 +333,7 @@ class Subagent:
                     raw_stderr=result.stderr,
                     result=fallback_response,
                     returncode=result.returncode,
-                    duration_seconds=duration
+                    duration_seconds=duration,
                 )
 
                 self.logger.log(
@@ -319,7 +343,7 @@ class Subagent:
                     trace_id=self.trace_id,
                     parent_trace_id=self.parent_trace_id,
                     step=self.step,
-                version=__version__
+                    version=__version__,
                 )
 
                 return fallback_response
@@ -327,7 +351,7 @@ class Subagent:
         except subprocess.TimeoutExpired as timeout_exc:
             timeout_response = {
                 "status": "failed",
-                "error": "Subagent timed out after 10 minutes"
+                "error": "Subagent timed out after 10 minutes",
             }
 
             # Log detailed execution for timeout
@@ -338,7 +362,7 @@ class Subagent:
                 raw_stderr=timeout_exc.stderr.decode() if timeout_exc.stderr else "",
                 result=timeout_response,
                 returncode=-1,
-                duration_seconds=duration
+                duration_seconds=duration,
             )
 
             self.logger.log(
@@ -348,16 +372,13 @@ class Subagent:
                 trace_id=self.trace_id,
                 parent_trace_id=self.parent_trace_id,
                 step=self.step,
-                version=__version__
+                version=__version__,
             )
 
             return timeout_response
 
         except Exception as e:
-            exception_response = {
-                "status": "failed",
-                "error": str(e)
-            }
+            exception_response = {"status": "failed", "error": str(e)}
 
             # Log detailed execution for exceptions
             duration = (datetime.now() - start_time).total_seconds()
@@ -367,7 +388,7 @@ class Subagent:
                 raw_stderr=str(e),
                 result=exception_response,
                 returncode=-1,
-                duration_seconds=duration
+                duration_seconds=duration,
             )
 
             self.logger.log(
@@ -377,7 +398,7 @@ class Subagent:
                 trace_id=self.trace_id,
                 parent_trace_id=self.parent_trace_id,
                 step=self.step,
-                version=__version__
+                version=__version__,
             )
 
             return exception_response
@@ -474,7 +495,7 @@ Begin now.
         import re
 
         # Look for ```json ... ``` blocks
-        json_pattern = r'```json\s*\n(.*?)\n```'
+        json_pattern = r"```json\s*\n(.*?)\n```"
         matches = re.findall(json_pattern, content, re.DOTALL)
 
         if matches:

@@ -16,21 +16,49 @@ console = Console()
 
 def main():
     parser = argparse.ArgumentParser(description="Agentic Orchestrator")
-    parser.add_argument("--version", action="store_true", help="Show orchestrator version and exit")
+    parser.add_argument(
+        "--version", action="store_true", help="Show orchestrator version and exit"
+    )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Interview command
-    interview_parser = subparsers.add_parser("interview", help="Start project with interview")
-    interview_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
-    interview_parser.add_argument("--update", action="store_true", help="Update existing goals and tasks instead of starting fresh")
-    interview_parser.add_argument("--fresh", action="store_true", help="Ignore existing GOALS/TASKS even if they exist")
+    interview_parser = subparsers.add_parser(
+        "interview", help="Start project with interview"
+    )
+    interview_parser.add_argument(
+        "--workspace", type=Path, default=Path(".orchestrator")
+    )
+    interview_parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update existing goals and tasks instead of starting fresh",
+    )
+    interview_parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Ignore existing GOALS/TASKS even if they exist",
+    )
 
     # Run command
     run_parser = subparsers.add_parser("run", help="Run orchestrator")
     run_parser.add_argument("--workspace", type=Path, default=Path(".orchestrator"))
-    run_parser.add_argument("--min-steps", type=int, default=None, help="Minimum iterations (overrides config)")
-    run_parser.add_argument("--max-steps", type=int, default=None, help="Maximum iterations (overrides config)")
-    run_parser.add_argument("--surgical", action="store_true", help="Enable surgical mode (tight scope, minimal edits)")
+    run_parser.add_argument(
+        "--min-steps",
+        type=int,
+        default=None,
+        help="Minimum iterations (overrides config)",
+    )
+    run_parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Maximum iterations (overrides config)",
+    )
+    run_parser.add_argument(
+        "--surgical",
+        action="store_true",
+        help="Enable surgical mode (tight scope, minimal edits)",
+    )
     run_parser.add_argument(
         "--surgical-path",
         dest="surgical_paths",
@@ -74,7 +102,9 @@ def main():
         if use_update_flow:
             # Update mode
             if not has_existing:
-                console.print("[red]ERROR:[/red] --update requires existing GOALS.md and TASKS.md")
+                console.print(
+                    "[red]ERROR:[/red] --update requires existing GOALS.md and TASKS.md"
+                )
                 console.print("Run 'orchestrate interview' without --update first.")
                 sys.exit(1)
 
@@ -119,7 +149,9 @@ Start the discussion now.
             # Fresh interview mode
             console.print("[bold]Starting Interview...[/bold]\n")
             console.print(f"Working directory: {Path.cwd()}")
-            console.print(f"Workspace will be created at: {args.workspace.absolute()}\n")
+            console.print(
+                f"Workspace will be created at: {args.workspace.absolute()}\n"
+            )
 
             prompt = f"""You are helping set up a new project in the current directory: {Path.cwd()}
 
@@ -130,8 +162,9 @@ Ask the user questions to establish:
 2. Nice-to-have features (flexible, can be skipped)
 3. Out of scope items (what this project will NOT do)
 4. Technical constraints (language, frameworks, requirements)
+5. Development environment setup (how to run/test the project)
 
-After gathering all information, create TWO files:
+After gathering all information, create THREE files:
 
 1. Create .orchestrator/current/GOALS.md with this EXACT format:
 
@@ -178,18 +211,45 @@ IMPORTANT:
 - These checks prove task completion objectively
 - **CRITICAL**: All file paths in verification checks must be relative to the project root, NOT inside `.orchestrator/`. The `.orchestrator/` directory is reserved for orchestrator metadata only. Example: use `research/notes.md` NOT `.orchestrator/current/research/notes.md`.
 
+3. Create init.sh in the project root with environment setup:
+
+This script should contain ALL commands needed to:
+- Install dependencies (npm install, pip install, etc.)
+- Start any required services (databases, dev servers)
+- Set up the development environment
+- Run any initial build steps
+
+Example init.sh:
+```bash
+#!/bin/bash
+# Project initialization script
+# Run this to set up the development environment
+
+set -e  # Exit on error
+
+echo "Installing dependencies..."
+# Add dependency installation commands here
+
+echo "Starting development server..."
+# Add server start commands here (run in background with &)
+
+echo "Environment ready!"
+```
+
+Make init.sh executable with: chmod +x init.sh
+
+The init.sh script is CRITICAL for long-running agent sessions - it allows agents
+to quickly set up the environment at the start of each session.
+
 Tell the user the interview is complete and they should now run: orchestrate run
 
 Start the interview now.
 """
 
         # Run interactive Claude session (Opus for planning/interview quality)
-        subprocess.run([
-            claude_path,
-            "--model", "opus",
-            "--dangerously-skip-permissions",
-            prompt
-        ])
+        subprocess.run(
+            [claude_path, "--model", "opus", "--dangerously-skip-permissions", prompt]
+        )
 
         # Create default config file
         config_path = args.workspace / "orchestrator.config.yaml"
@@ -197,12 +257,16 @@ Start the interview now.
             default_config = OrchestratorConfig()
             default_config.save(config_path)
             console.print(f"\n[green]✓[/green] Created config file: {config_path}")
-            console.print("[dim]Edit this file to customize orchestrator settings[/dim]")
+            console.print(
+                "[dim]Edit this file to customize orchestrator settings[/dim]"
+            )
 
     elif args.command == "run":
         # Check workspace exists
         if not args.workspace.exists():
-            console.print(f"[red]ERROR:[/red] Workspace not found: {args.workspace.absolute()}")
+            console.print(
+                f"[red]ERROR:[/red] Workspace not found: {args.workspace.absolute()}"
+            )
             console.print("\nRun 'orchestrate interview' first to set up your project.")
             sys.exit(1)
 
@@ -210,7 +274,9 @@ Start the interview now.
         goals_file = args.workspace / "current" / "GOALS.md"
         if not goals_file.exists():
             console.print(f"[red]ERROR:[/red] GOALS.md not found: {goals_file}")
-            console.print("\nRun 'orchestrate interview' first to create project goals.")
+            console.print(
+                "\nRun 'orchestrate interview' first to create project goals."
+            )
             sys.exit(1)
 
         # Load config file if exists
@@ -251,9 +317,9 @@ Start the interview now.
         )
         result = orch.run()
 
-        console.print("\n" + "="*60)
+        console.print("\n" + "=" * 60)
         console.print(f"[bold]Final Result:[/bold] {result}")
-        console.print("="*60)
+        console.print("=" * 60)
 
         if result == "SUCCESS":
             console.print("\n[green]✓ All core goals achieved![/green]")
@@ -262,7 +328,9 @@ Start the interview now.
             console.print("Check .orchestrator/current/TASKS.md")
         elif result == "MAX_ITERATIONS_REACHED":
             console.print(f"\n[yellow]⚠ Reached max iterations ({max_steps})[/yellow]")
-            console.print("Some goals may not be complete. Check .orchestrator/current/TASKS.md")
+            console.print(
+                "Some goals may not be complete. Check .orchestrator/current/TASKS.md"
+            )
 
         console.print(f"\nEvent log: {args.workspace / 'full_history.jsonl'}")
 

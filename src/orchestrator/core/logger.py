@@ -23,7 +23,7 @@ class EventLogger:
         trace_id: str,
         parent_trace_id: Optional[str] = None,
         step: Optional[int] = None,
-        version: Optional[str] = None
+        version: Optional[str] = None,
     ) -> None:
         """Append event to JSONL log."""
         event = LogEvent(
@@ -34,7 +34,7 @@ class EventLogger:
             trace_id=trace_id,
             parent_trace_id=parent_trace_id,
             payload=payload,
-            version=version
+            version=version,
         )
 
         with open(self.log_path, "a") as f:
@@ -51,8 +51,7 @@ class EventLogger:
                 event_dict = json.loads(line)
 
                 match = all(
-                    event_dict.get(key) == value
-                    for key, value in filters.items()
+                    event_dict.get(key) == value for key, value in filters.items()
                 )
 
                 if match:

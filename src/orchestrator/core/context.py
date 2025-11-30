@@ -25,7 +25,9 @@ def _extract_deliverables(task: Task) -> str:
         if check.type == "file_exists":
             deliverables.append(f"- CREATE FILE: `{check.target}`")
         elif check.type == "pattern_in_file":
-            deliverables.append(f"- FILE WITH CONTENT: `{check.target}` (must contain: `{check.expected or check.description}`)")
+            deliverables.append(
+                f"- FILE WITH CONTENT: `{check.target}` (must contain: `{check.expected or check.description}`)"
+            )
 
     if not deliverables:
         return ""
@@ -39,8 +41,22 @@ def _format_acceptance_criteria(task: Task) -> str:
         return "- None provided"
 
     lines = []
-    lines.append("**CRITICAL: Your work will be automatically verified against these checks.**")
-    lines.append("**You MUST ensure your output satisfies ALL of these criteria or the task will FAIL.**\n")
+    lines.append(
+        "**CRITICAL: Your work will be automatically verified against these checks.**"
+    )
+    lines.append(
+        "**You MUST ensure your output satisfies ALL of these criteria or the task will FAIL.**"
+    )
+    lines.append("")
+    lines.append(
+        "⚠️ **IT IS UNACCEPTABLE TO REMOVE, MODIFY, OR SKIP THESE ACCEPTANCE CRITERIA.**"
+    )
+    lines.append(
+        "These checks exist to verify your work objectively. Attempting to change them"
+    )
+    lines.append(
+        "instead of implementing the required functionality is considered a FAILURE.\n"
+    )
 
     for i, check in enumerate(task.acceptance_criteria, 1):
         lines.append(f"### Check {i}: {check.description}")
@@ -48,17 +64,25 @@ def _format_acceptance_criteria(task: Task) -> str:
         lines.append(f"- Target: `{check.target}`")
 
         if check.type == "pattern_in_file":
-            lines.append(f"- **REQUIRED PATTERN**: Your output file MUST contain text matching: `{check.expected or check.description}`")
-            lines.append("  - This is a regex pattern. Make sure your content includes words/phrases that match.")
+            lines.append(
+                f"- **REQUIRED PATTERN**: Your output file MUST contain text matching: `{check.expected or check.description}`"
+            )
+            lines.append(
+                "  - This is a regex pattern. Make sure your content includes words/phrases that match."
+            )
             if check.expected:
                 # Give examples of what would match
                 pattern = check.expected
                 if "|" in pattern:
                     options = pattern.split("|")
-                    lines.append(f"  - Example valid matches: include ANY of these exact terms: {', '.join(options)}")
+                    lines.append(
+                        f"  - Example valid matches: include ANY of these exact terms: {', '.join(options)}"
+                    )
         elif check.type == "file_exists":
             lines.append(f"- **YOU MUST CREATE THIS FILE**: `{check.target}`")
-            lines.append("  - This file must exist when you finish. Use Write or Edit tools to create it.")
+            lines.append(
+                "  - This file must exist when you finish. Use Write or Edit tools to create it."
+            )
             lines.append("  - The file path is relative to the project root directory.")
         elif check.type == "command_succeeds":
             lines.append(f"  - This command must exit with code 0: `{check.target}`")
@@ -76,11 +100,15 @@ def build_task_agent_prompt(task: Task, plan_context: PlanContext) -> str:
             f"- [{'general' if entry.is_general else entry.task_id}] {entry.content}"
             for entry in plan_context.user_feedback[-5:]
         ]
-        feedback_section = "\n## User Feedback (PRIORITY)\n" + "\n".join(feedback_lines) + "\n"
+        feedback_section = (
+            "\n## User Feedback (PRIORITY)\n" + "\n".join(feedback_lines) + "\n"
+        )
 
     surgical_section = ""
     if plan_context.surgical_mode:
-        allowed = plan_context.surgical_paths or ["Focus on the smallest viable change."]
+        allowed = plan_context.surgical_paths or [
+            "Focus on the smallest viable change."
+        ]
         allowed_block = "\n".join(f"- {path}" for path in allowed)
         surgical_section = f"""
 ## Surgical Constraints
@@ -95,26 +123,59 @@ Allowed focus areas:
     acceptance_criteria = _format_acceptance_criteria(task)
     deliverables = _extract_deliverables(task)
 
+    # Get bearings section - helps actors understand current state
+    get_bearings_section = """## STEP 1: Get Your Bearings (DO THIS FIRST)
+
+Before implementing anything, orient yourself:
+
+1. **Check git status**: Run `git status` to see what files are modified/staged
+2. **Read recent commits**: Run `git log --oneline -5` to understand recent changes
+3. **Review progress**: Check the workspace context below for previous task summaries
+4. **Verify nothing is broken**: If there are existing tests/checks, run them first
+   - If something is broken from a previous session, FIX IT FIRST before new work
+
+Only after understanding the current state should you proceed to implementation.
+"""
+
+    # Clean state section - ensures actors leave things in a good state
+    clean_state_section = """## STEP 3: Leave Clean State (DO THIS WHEN DONE)
+
+Before reporting completion:
+
+1. **No half-implemented code**: All changes must be complete and functional
+2. **Commit your work**: Run `git add` and `git commit -m "descriptive message"` for your changes
+3. **Verify acceptance criteria pass**: Re-run any checks to confirm they pass
+4. **No debug artifacts**: Remove any debug prints, temporary files, or commented-out code
+5. **Code compiles/runs**: Ensure there are no syntax errors or import failures
+
+The environment must be left in a state where the next agent (or human) can
+immediately start working on the next task without cleanup.
+"""
+
     return f"""You are the implementation agent for {task.id}.
 
+{get_bearings_section}
 {deliverables}
-## Objective
+## STEP 2: Implement the Objective
 {task.description}
 
 ## Acceptance Criteria (MANDATORY)
 {acceptance_criteria}
 
-{feedback_section if feedback_section else ''}
+{feedback_section if feedback_section else ""}
 
-{surgical_section if surgical_section else ''}
+{surgical_section if surgical_section else ""}
 
-## Guidelines
+{clean_state_section}
+
+## Additional Guidelines
 - Work incrementally and keep changes minimal but functional.
 - Document any limitations directly in code comments where relevant.
 - Avoid running slow external services unless required.
 - Always review the Operator Notes section for priority guidance before acting.
 - **NEVER create files inside the `.orchestrator/` directory** - that directory is reserved for orchestrator metadata only. All project files, outputs, and deliverables must be created in the project root or its subdirectories (NOT inside `.orchestrator/`).
 - **DO NOT update CHANGELOG.md** - changelog updates are handled automatically by the orchestrator at specific intervals. Manual updates will cause duplicate entries.
+- **DO NOT modify acceptance criteria** - they are immutable verification checks.
 
 Respond with the mandatory JSON block when finished."""
 
@@ -126,6 +187,29 @@ def build_actor_workspace_context(
 ) -> str:
     """Concise project snapshot appended to actor prompt."""
     lines: List[str] = []
+
+    # Session orientation - git status and recent commits
+    lines.append("### Current Git Status")
+    lines.append("```")
+    lines.append(plan_context.git_status or "Working directory clean")
+    lines.append("```")
+    lines.append("")
+
+    lines.append("### Recent Git Commits")
+    lines.append("```")
+    lines.append(plan_context.git_recent_commits or "No commits yet")
+    lines.append("```")
+    lines.append("")
+
+    # Recent progress from previous sessions
+    if (
+        plan_context.progress_summary
+        and plan_context.progress_summary != "No previous progress recorded."
+    ):
+        lines.append("### Recent Progress (Previous Sessions)")
+        lines.append(plan_context.progress_summary)
+        lines.append("")
+
     lines.append("### Operator Notes")
     lines.append(plan_context.notes_summary)
     lines.append("")

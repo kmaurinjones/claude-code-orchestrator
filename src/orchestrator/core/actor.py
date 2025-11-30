@@ -44,12 +44,18 @@ class Actor:
             raise ValueError("Planner request missing task payload.")
 
         task = decision.task
-        console.print(f"[cyan]{self._timestamp()} [ACTOR][/cyan] Executing {task.id} (attempt {decision.attempt})")
+        console.print(
+            f"[cyan]{self._timestamp()} [ACTOR][/cyan] Executing {task.id} (attempt {decision.attempt})"
+        )
 
         prompt = build_task_agent_prompt(task, decision.context)
-        workspace_context = build_actor_workspace_context(task, decision.context, self.project_root)
+        workspace_context = build_actor_workspace_context(
+            task, decision.context, self.project_root
+        )
 
-        agent_result = self._run_subagent(task, prompt, workspace_context, decision.step)
+        agent_result = self._run_subagent(
+            task, prompt, workspace_context, decision.step
+        )
         status = (agent_result.get("status") or "").lower()
         if status != "success":
             error_summary = agent_result.get("error") or agent_result.get("output", "")

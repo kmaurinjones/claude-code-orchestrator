@@ -63,7 +63,9 @@ class FailureDiagnoser:
         error_text = self._collect_error_text(error_output, test_results, task)
 
         # Run classification
-        category, confidence, evidence = self._classify_failure(error_text, task, attempt_count)
+        category, confidence, evidence = self._classify_failure(
+            error_text, task, attempt_count
+        )
 
         # Generate diagnosis
         summary = self._generate_summary(category, evidence, task)
@@ -183,11 +185,15 @@ class FailureDiagnoser:
                 matches = re.findall(pattern, error_text, re.IGNORECASE)
                 if matches:
                     # Adjust confidence based on match count
-                    adjusted_confidence = min(1.0, base_confidence + 0.05 * (len(matches) - 1))
+                    adjusted_confidence = min(
+                        1.0, base_confidence + 0.05 * (len(matches) - 1)
+                    )
                     if adjusted_confidence > best_confidence:
                         best_confidence = adjusted_confidence
                         best_category = category
-                        evidence = [f"Pattern '{pattern}' matched {len(matches)} time(s)"]
+                        evidence = [
+                            f"Pattern '{pattern}' matched {len(matches)} time(s)"
+                        ]
 
         # Check for repeated failures suggesting wrong approach
         if attempt_count >= 3 and best_category == FailureCategory.UNKNOWN:
@@ -233,8 +239,7 @@ class FailureDiagnoser:
                 "Consider adding retry logic or fixing timing issues."
             ),
             FailureCategory.SYNTAX_ERROR: (
-                "Code syntax error detected. "
-                "Fix the syntax issues before proceeding."
+                "Code syntax error detected. Fix the syntax issues before proceeding."
             ),
             FailureCategory.TYPE_ERROR: (
                 "Type mismatch or type checking failure. "
@@ -363,7 +368,9 @@ class FailureDiagnoser:
                 terms.append(term)
 
         # Extract CamelCase or snake_case identifiers
-        identifiers = re.findall(r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)+|[a-z]+_[a-z_]+)\b', task.description)
+        identifiers = re.findall(
+            r"\b([A-Z][a-z]+(?:[A-Z][a-z]+)+|[a-z]+_[a-z_]+)\b", task.description
+        )
         terms.extend(identifiers[:5])
 
         return terms[:10]

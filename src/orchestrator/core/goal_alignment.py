@@ -124,7 +124,9 @@ class GoalAlignmentTracker:
                     progress.failed_tasks += 1
 
         # Identify blocking tasks (tasks that appear in multiple goal paths)
-        blocking_tasks = [t for t in multi_goal_tasks if t.status != TaskStatus.COMPLETE]
+        blocking_tasks = [
+            t for t in multi_goal_tasks if t.status != TaskStatus.COMPLETE
+        ]
 
         return AlignmentReport(
             goal_progress=goal_progress,
@@ -136,9 +138,7 @@ class GoalAlignmentTracker:
     def get_goal_tasks(self, goal_id: str) -> List[Task]:
         """Get all tasks linked to a specific goal."""
         return [
-            task
-            for task in self.tasks._tasks.values()
-            if goal_id in task.related_goals
+            task for task in self.tasks._tasks.values() if goal_id in task.related_goals
         ]
 
     def get_unblocking_tasks(self) -> List[Task]:
@@ -162,9 +162,7 @@ class GoalAlignmentTracker:
             task_scores[task_id] = score
 
         # Sort by score descending
-        sorted_tasks = sorted(
-            task_scores.items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_tasks = sorted(task_scores.items(), key=lambda x: x[1], reverse=True)
 
         return [
             self.tasks._tasks[task_id]
@@ -201,12 +199,16 @@ class GoalAlignmentTracker:
         console.print(table)
 
         if report.orphan_tasks:
-            console.print(f"\n[yellow]⚠ {len(report.orphan_tasks)} orphan task(s) not linked to any goal[/yellow]")
+            console.print(
+                f"\n[yellow]⚠ {len(report.orphan_tasks)} orphan task(s) not linked to any goal[/yellow]"
+            )
             for task in report.orphan_tasks[:5]:
                 console.print(f"  - {task.id}: {task.title[:60]}")
 
         if report.blocking_tasks:
-            console.print(f"\n[cyan]ℹ {len(report.blocking_tasks)} task(s) blocking multiple goals[/cyan]")
+            console.print(
+                f"\n[cyan]ℹ {len(report.blocking_tasks)} task(s) blocking multiple goals[/cyan]"
+            )
             for task in report.blocking_tasks[:3]:
                 goals_str = ", ".join(task.related_goals[:3])
                 console.print(f"  - {task.id}: {task.title[:40]} (goals: {goals_str})")
@@ -225,7 +227,20 @@ class GoalAlignmentTracker:
 
             common = goal_words & task_words
             # Exclude common words
-            common -= {"the", "a", "an", "is", "are", "and", "or", "to", "for", "in", "of", "with"}
+            common -= {
+                "the",
+                "a",
+                "an",
+                "is",
+                "are",
+                "and",
+                "or",
+                "to",
+                "for",
+                "in",
+                "of",
+                "with",
+            }
 
             if len(common) >= 2:
                 suggestions.append(goal.id)

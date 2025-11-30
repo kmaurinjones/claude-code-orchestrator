@@ -12,7 +12,13 @@ from uuid import uuid4
 
 from rich.console import Console
 
-from .contracts import ActorOutcome, ActorStatus, CriticVerdict, PlanDecision, VerdictStatus
+from .contracts import (
+    ActorOutcome,
+    ActorStatus,
+    CriticVerdict,
+    PlanDecision,
+    VerdictStatus,
+)
 from .context import build_reviewer_context
 from .reviewer import ReviewFeedback, Reviewer
 
@@ -186,9 +192,13 @@ class Critic:
         ):
             feedback.status = "PASS"
             if not feedback.summary or "timeout" in summary_lower:
-                feedback.summary = "Reviewer timed out, but all acceptance checks passed."
+                feedback.summary = (
+                    "Reviewer timed out, but all acceptance checks passed."
+                )
             if not feedback.next_steps:
-                feedback.next_steps = "Proceed; reviewer hit max turns but tests are green."
+                feedback.next_steps = (
+                    "Proceed; reviewer hit max turns but tests are green."
+                )
             console.print(
                 f"[yellow]{self._timestamp()} [REVIEW][/yellow] Auto-accepting reviewer timeout (tests green)."
             )
@@ -199,7 +209,9 @@ class Critic:
     # Production gate                                                     #
     # ------------------------------------------------------------------ #
 
-    def _run_production_checks(self, task_id: str, domain: Optional[str]) -> CriticFeedback:
+    def _run_production_checks(
+        self, task_id: str, domain: Optional[str]
+    ) -> CriticFeedback:
         findings: List[str] = []
 
         changed_files = self._collect_changed_files()
@@ -277,7 +289,9 @@ class Critic:
             filename = Path(path).name
             if " " in filename:
                 findings.append(f"{path}: file name contains spaces.")
-            if path.endswith(".py") and not snake_case.match(filename.replace(".py", "")):
+            if path.endswith(".py") and not snake_case.match(
+                filename.replace(".py", "")
+            ):
                 findings.append(f"{path}: python files should use snake_case.")
         return findings
 
@@ -292,7 +306,9 @@ class Critic:
             try:
                 for idx, line in enumerate(file_path.read_text().splitlines(), start=1):
                     if line.endswith(" ") or "\t" in line:
-                        findings.append(f"{relative}: line {idx} has trailing whitespace or tabs.")
+                        findings.append(
+                            f"{relative}: line {idx} has trailing whitespace or tabs."
+                        )
                         break
             except UnicodeDecodeError:
                 continue
@@ -342,7 +358,9 @@ class Critic:
             lines = content.splitlines()
 
             # Check 1: Modules must have docstrings
-            if not content.strip().startswith('"""') and not content.strip().startswith("'''"):
+            if not content.strip().startswith('"""') and not content.strip().startswith(
+                "'''"
+            ):
                 # Allow __init__.py to be minimal
                 if file_path.name != "__init__.py" or len(content.strip()) > 50:
                     findings.append(
@@ -370,7 +388,11 @@ class Critic:
             for i, line in enumerate(lines, start=1):
                 if re.search(r"\bprint\s*\(", line) and "# DEBUG" not in line.upper():
                     # Allow logging and intentional output
-                    if "logger" not in line and "console" not in line and "log" not in line.lower():
+                    if (
+                        "logger" not in line
+                        and "console" not in line
+                        and "log" not in line.lower()
+                    ):
                         findings.append(
                             f"{relative}:{i}: Debug print() statement detected. "
                             "Use logging instead of print() for production code."
@@ -393,15 +415,19 @@ class Critic:
 
             # Check 6: Functions without docstrings (for non-trivial code)
             if len(lines) > 30:  # Only enforce for substantial files
-                func_matches = re.finditer(r"^\s*def\s+(\w+)\s*\(", content, re.MULTILINE)
+                func_matches = re.finditer(
+                    r"^\s*def\s+(\w+)\s*\(", content, re.MULTILINE
+                )
                 for match in func_matches:
                     func_name = match.group(1)
                     if func_name.startswith("_"):  # Allow private functions to skip
                         continue
                     # Check if next non-empty line is a docstring
                     start_pos = match.end()
-                    rest = content[start_pos:start_pos + 200]
-                    if not re.search(r'^\s*"""', rest) and not re.search(r"^\s*'''", rest):
+                    rest = content[start_pos : start_pos + 200]
+                    if not re.search(r'^\s*"""', rest) and not re.search(
+                        r"^\s*'''", rest
+                    ):
                         findings.append(
                             f"{relative}: Function '{func_name}' missing docstring. "
                             "Public functions must document parameters and behavior."
@@ -495,6 +521,9 @@ class Critic:
         if result.returncode != 0:
             output = result.stdout.strip() or result.stderr.strip()
             snippet = output.splitlines()[:5]
-            return "LINTING FAILED - production code must pass all lint checks:\n" + "\n".join(snippet)
+            return (
+                "LINTING FAILED - production code must pass all lint checks:\n"
+                + "\n".join(snippet)
+            )
 
         return None

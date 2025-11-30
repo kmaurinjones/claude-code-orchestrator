@@ -97,7 +97,7 @@ def _build_reviewer_task_description(
 - Attempts: {task.attempt_count}/{task.max_attempts}
 
 ## Operator Notes (highest priority)
-{notes_overview or 'No operator notes.'}
+{notes_overview or "No operator notes."}
 
 ## User Feedback (CRITICAL - must address)
 {user_feedback_section}
@@ -134,7 +134,9 @@ def _extract_json_block(raw_output: str) -> Optional[Dict[str, Any]]:
     if not raw_output:
         return None
 
-    code_blocks = re.findall(r"```json\s*([\s\S]*?)```", raw_output, flags=re.IGNORECASE)
+    code_blocks = re.findall(
+        r"```json\s*([\s\S]*?)```", raw_output, flags=re.IGNORECASE
+    )
     candidates = code_blocks if code_blocks else [raw_output]
 
     for snippet in reversed(candidates):
@@ -152,10 +154,17 @@ def _extract_json_block(raw_output: str) -> Optional[Dict[str, Any]]:
 class Reviewer:
     """Drive reviewer subagent and parse structured feedback."""
 
-    def __init__(self, project_root: Path, logger: EventLogger, log_workspace: Optional[Path] = None):
+    def __init__(
+        self,
+        project_root: Path,
+        logger: EventLogger,
+        log_workspace: Optional[Path] = None,
+    ):
         self.project_root = Path(project_root).resolve()
         self.logger = logger
-        self.log_workspace = Path(log_workspace).resolve() if log_workspace else self.project_root
+        self.log_workspace = (
+            Path(log_workspace).resolve() if log_workspace else self.project_root
+        )
 
     def review(
         self,
@@ -211,16 +220,25 @@ class Reviewer:
         if not parsed_block:
             parsed_block = _extract_json_block(raw_output) or {}
 
-        status = parsed_block.get("status") or parsed_block.get("STATUS") or "NEEDS_FOLLOWUP"
+        status = (
+            parsed_block.get("status") or parsed_block.get("STATUS") or "NEEDS_FOLLOWUP"
+        )
 
         summary = parsed_block.get("summary")
-        next_steps = parsed_block.get("next_steps") if isinstance(parsed_block.get("next_steps"), str) else None
+        next_steps = (
+            parsed_block.get("next_steps")
+            if isinstance(parsed_block.get("next_steps"), str)
+            else None
+        )
         suggestions = parsed_block.get("suggestions")
 
         if not summary:
             if raw_output and "error_max_turns" in raw_output:
                 summary = "Reviewer hit max turns before providing feedback."
-                next_steps = next_steps or "Retry the review with tighter prompt or fewer context details."
+                next_steps = (
+                    next_steps
+                    or "Retry the review with tighter prompt or fewer context details."
+                )
             elif raw_output:
                 summary = raw_output
             else:
@@ -233,7 +251,6 @@ class Reviewer:
             suggestions=suggestions if isinstance(suggestions, list) else None,
             raw_output=raw_output,
         )
-
 
 
 def _domain_reviewer_focus(domain: str) -> str:
@@ -249,9 +266,7 @@ def _domain_reviewer_focus(domain: str) -> str:
             "- Highlight any performance or security considerations."
         )
     if domain == "frontend":
-        return (
-            "- Confirm build/test commands are updated and note UX impacts."
-        )
+        return "- Confirm build/test commands are updated and note UX impacts."
     return (
         "- Call out risks or follow-ups before marking complete.\n"
         "- Do NOT update CHANGELOG.md - changelog updates are handled automatically by the orchestrator."

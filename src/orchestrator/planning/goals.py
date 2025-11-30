@@ -24,7 +24,7 @@ class GoalsManager:
                 description=item["title"],
                 measurable_criteria=item.get("measurable", ""),
                 tier=GoalTier.CORE,
-                is_negotiable=False
+                is_negotiable=False,
             )
             self._goals.append(goal)
 
@@ -35,7 +35,7 @@ class GoalsManager:
                 description=item,
                 measurable_criteria="",
                 tier=GoalTier.NICE_TO_HAVE,
-                is_negotiable=True
+                is_negotiable=True,
             )
             self._goals.append(goal)
 
@@ -86,3 +86,37 @@ class GoalsManager:
 
     def get_goal(self, goal_id: str) -> Optional[Goal]:
         return next((g for g in self._goals if g.id == goal_id), None)
+
+    def save(self) -> None:
+        """Save goals back to GOALS.md, preserving format."""
+        lines = ["# GOALS.md", f"Generated: {self._get_timestamp()}", ""]
+
+        # Core goals
+        core = [g for g in self._goals if g.tier == GoalTier.CORE]
+        if core:
+            lines.append("## Core Success Criteria (IMMUTABLE)")
+            for i, goal in enumerate(core, 1):
+                achieved_mark = " ✓" if goal.achieved else ""
+                lines.append(f"{i}. **{goal.description}**{achieved_mark}")
+                if goal.measurable_criteria:
+                    lines.append(f"   - Measurable: {goal.measurable_criteria}")
+                if goal.confidence > 0:
+                    lines.append(f"   - Confidence: {goal.confidence:.2f}")
+                lines.append("")
+
+        # Nice to have goals
+        nice = [g for g in self._goals if g.tier == GoalTier.NICE_TO_HAVE]
+        if nice:
+            lines.append("## Nice-to-Have (FLEXIBLE)")
+            for goal in nice:
+                lines.append(f"- {goal.description}")
+            lines.append("")
+
+        self.goals_path.parent.mkdir(parents=True, exist_ok=True)
+        self.goals_path.write_text("\n".join(lines))
+
+    @staticmethod
+    def _get_timestamp() -> str:
+        from datetime import datetime
+
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

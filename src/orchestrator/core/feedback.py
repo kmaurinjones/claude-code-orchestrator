@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 class FeedbackEntry(BaseModel):
     """A single user feedback entry."""
+
     task_id: Optional[str] = None  # None means general feedback
     content: str
     timestamp: datetime
@@ -119,7 +120,9 @@ This file allows you to provide feedback to the orchestrator during execution.
 
     def _extract_new_notes_section(self, content: str) -> str:
         """Extract content between 'New Notes' and 'Previously Reviewed' headers."""
-        pattern = rf"{re.escape(self.NEW_NOTES_HEADER)}(.*?){re.escape(self.REVIEWED_HEADER)}"
+        pattern = (
+            rf"{re.escape(self.NEW_NOTES_HEADER)}(.*?){re.escape(self.REVIEWED_HEADER)}"
+        )
         match = re.search(pattern, content, re.DOTALL)
 
         if not match:
@@ -140,7 +143,7 @@ This file allows you to provide feedback to the orchestrator during execution.
         timestamp = datetime.now()
 
         # Split by lines starting with '-'
-        lines = notes_section.split('\n')
+        lines = notes_section.split("\n")
 
         for line in lines:
             line = line.strip()
@@ -149,14 +152,14 @@ This file allows you to provide feedback to the orchestrator during execution.
                 continue
 
             # Remove leading bullet if present
-            if line.startswith('-') or line.startswith('*'):
+            if line.startswith("-") or line.startswith("*"):
                 line = line[1:].strip()
 
             if not line:
                 continue
 
             # Parse [task-id] prefix
-            task_match = re.match(r'\[([^\]]+)\]\s*(.*)', line)
+            task_match = re.match(r"\[([^\]]+)\]\s*(.*)", line)
 
             if task_match:
                 task_id_raw = task_match.group(1).strip()
@@ -166,18 +169,16 @@ This file allows you to provide feedback to the orchestrator during execution.
                 task_id = None if task_id_raw.lower() == "general" else task_id_raw
 
                 if content:
-                    entries.append(FeedbackEntry(
-                        task_id=task_id,
-                        content=content,
-                        timestamp=timestamp
-                    ))
+                    entries.append(
+                        FeedbackEntry(
+                            task_id=task_id, content=content, timestamp=timestamp
+                        )
+                    )
             else:
                 # No bracket format - treat as general feedback
-                entries.append(FeedbackEntry(
-                    task_id=None,
-                    content=line,
-                    timestamp=timestamp
-                ))
+                entries.append(
+                    FeedbackEntry(task_id=None, content=line, timestamp=timestamp)
+                )
 
         return entries
 
@@ -206,15 +207,12 @@ This file allows you to provide feedback to the orchestrator during execution.
             rf"({re.escape(self.NEW_NOTES_HEADER)})(.*?)(---)",
             r"\1\n\n\n---",
             before_reviewed,
-            flags=re.DOTALL
+            flags=re.DOTALL,
         )
 
         # Append to Previously Reviewed
         updated_content = (
-            new_notes_cleared +
-            self.REVIEWED_HEADER +
-            archive_entry +
-            after_reviewed
+            new_notes_cleared + self.REVIEWED_HEADER + archive_entry + after_reviewed
         )
 
         self.notes_file.write_text(updated_content)
@@ -225,7 +223,7 @@ This file allows you to provide feedback to the orchestrator during execution.
 
         state = {
             "last_processed_mtime": self.notes_file.stat().st_mtime,
-            "last_processed_time": datetime.now().isoformat()
+            "last_processed_time": datetime.now().isoformat(),
         }
 
         self.state_file.write_text(json.dumps(state, indent=2))

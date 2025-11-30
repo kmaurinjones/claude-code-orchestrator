@@ -24,16 +24,18 @@ class TaskGraph:
 
         # Parse format: - [📋] task-001: Description (priority: 10) or - [📋] task-001: Description
         # Make priority optional
-        task_pattern = r'-\s*\[(.+?)\]\s*(task-\S+):\s*(.+?)(?:\s*\(priority:\s*(\d+)\))?$'
+        task_pattern = (
+            r"-\s*\[(.+?)\]\s*(task-\S+):\s*(.+?)(?:\s*\(priority:\s*(\d+)\))?$"
+        )
 
         # Verification check pattern: - Verify: type:target "description or pattern"
         # For pattern_in_file, the quoted part is the pattern, not just description
         verify_pattern = r'-\s*Verify:\s*(\w+):(.+?)\s+"(.+?)"'
-        depends_pattern = r'-\s*Depends on:\s*(.+)'
+        depends_pattern = r"-\s*Depends on:\s*(.+)"
 
         current_task = None
 
-        for line in content.split('\n'):
+        for line in content.split("\n"):
             # Check for task line
             match = re.search(task_pattern, line)
             if match:
@@ -51,7 +53,7 @@ class TaskGraph:
                     title=description.strip(),
                     description=description.strip(),
                     status=status,
-                    priority=int(priority) if priority else 5  # Default priority 5
+                    priority=int(priority) if priority else 5,  # Default priority 5
                 )
 
                 self.add_task(task)
@@ -64,17 +66,25 @@ class TaskGraph:
                 deps_raw = depends_match.group(1).strip()
                 dependencies: List[str] = []
 
-                if deps_raw.startswith('[') and deps_raw.endswith(']'):
+                if deps_raw.startswith("[") and deps_raw.endswith("]"):
                     try:
                         parsed = ast.literal_eval(deps_raw)
                         if isinstance(parsed, (list, tuple)):
-                            dependencies = [str(item).strip() for item in parsed if str(item).strip()]
+                            dependencies = [
+                                str(item).strip()
+                                for item in parsed
+                                if str(item).strip()
+                            ]
                     except (SyntaxError, ValueError):
                         # Fallback to comma split below
                         pass
 
                 if not dependencies:
-                    dependencies = [dep.strip().strip('"').strip("'") for dep in deps_raw.split(",") if dep.strip()]
+                    dependencies = [
+                        dep.strip().strip('"').strip("'")
+                        for dep in deps_raw.split(",")
+                        if dep.strip()
+                    ]
 
                 current_task.depends_on = dependencies
 
@@ -90,13 +100,15 @@ class TaskGraph:
                 verify_type, target, desc = verify_match.groups()
 
                 # For pattern_in_file, the description is also the pattern to search for
-                expected_val = desc.strip() if verify_type.strip() == "pattern_in_file" else None
+                expected_val = (
+                    desc.strip() if verify_type.strip() == "pattern_in_file" else None
+                )
 
                 check = VerificationCheck(
                     type=verify_type.strip(),
                     target=target.strip(),
                     expected=expected_val,
-                    description=desc.strip()
+                    description=desc.strip(),
                 )
 
                 current_task.acceptance_criteria.append(check)
@@ -135,7 +147,9 @@ class TaskGraph:
         self.add_task(task)
         return task
 
-    def update_task_dependencies(self, task_id: str, dependencies: Iterable[str]) -> None:
+    def update_task_dependencies(
+        self, task_id: str, dependencies: Iterable[str]
+    ) -> None:
         """Replace dependencies for a task and update the graph edges."""
         task = self._tasks.get(task_id)
         if not task:
@@ -156,9 +170,10 @@ class TaskGraph:
         """Generate a new task identifier with incremental numbering."""
         prefix_with_dash = f"{prefix}-"
         numbers = [
-            int(task_id[len(prefix_with_dash):])
+            int(task_id[len(prefix_with_dash) :])
             for task_id in self._tasks.keys()
-            if task_id.startswith(prefix_with_dash) and task_id[len(prefix_with_dash):].isdigit()
+            if task_id.startswith(prefix_with_dash)
+            and task_id[len(prefix_with_dash) :].isdigit()
         ]
         next_number = (max(numbers) if numbers else 0) + 1
         return f"{prefix}-{next_number:03d}"
@@ -235,14 +250,18 @@ class TaskGraph:
 
             lines.append(f"## {status.name.title()}\n")
             for task in tasks_in_status:
-                lines.append(f"- [{status.value}] {task.id}: {task.title} (priority: {task.priority})")
+                lines.append(
+                    f"- [{status.value}] {task.id}: {task.title} (priority: {task.priority})"
+                )
                 if task.depends_on:
                     lines.append(f"  - Depends on: {', '.join(task.depends_on)}")
                 if task.related_goals:
                     lines.append(f"  - Goals: {', '.join(task.related_goals)}")
                 if task.acceptance_criteria:
                     for check in task.acceptance_criteria:
-                        lines.append(f'  - Verify: {check.type}:{check.target} "{check.description}"')
+                        lines.append(
+                            f'  - Verify: {check.type}:{check.target} "{check.description}"'
+                        )
                 if task.summary:
                     lines.append(f"  - Summary: {task.summary[-1]}")
                 lines.append("\n")

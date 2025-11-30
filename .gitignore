@@ -6,6 +6,7 @@ AGENTS.md
 .orchestrator/
 example-projects/
 .ruff_cache/
+*example-projects/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

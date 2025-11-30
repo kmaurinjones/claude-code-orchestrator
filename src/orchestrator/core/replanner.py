@@ -21,7 +21,13 @@ console = Console()
 class Replanner:
     """Analyzes failed tasks and proposes follow-up remediation work."""
 
-    def __init__(self, project_root: Path, logger: EventLogger, log_workspace: Path, max_tasks: int = 3):
+    def __init__(
+        self,
+        project_root: Path,
+        logger: EventLogger,
+        log_workspace: Path,
+        max_tasks: int = 3,
+    ):
         self.project_root = Path(project_root).resolve()
         self.logger = logger
         self.max_tasks = max_tasks
@@ -148,7 +154,9 @@ Respond with a JSON array of task definitions:
 
     def _parse_task_proposals(self, output: str) -> List[Dict[str, Any]]:
         """Extract JSON array of remediation tasks from agent output."""
-        code_blocks = re.findall(r"```json\s*([\s\S]*?)```", output, flags=re.IGNORECASE)
+        code_blocks = re.findall(
+            r"```json\s*([\s\S]*?)```", output, flags=re.IGNORECASE
+        )
         candidates = code_blocks if code_blocks else [output]
 
         for snippet in reversed(candidates):
@@ -163,7 +171,9 @@ Respond with a JSON array of task definitions:
                 continue
         return []
 
-    def _build_task_from_payload(self, payload: Dict[str, Any], failed_task: Task) -> Task:
+    def _build_task_from_payload(
+        self, payload: Dict[str, Any], failed_task: Task
+    ) -> Task:
         """Convert JSON payload to Task model."""
         title = payload.get("title") or f"Remediate {failed_task.title}"
         description = payload.get("description") or title
@@ -179,7 +189,9 @@ Respond with a JSON array of task definitions:
                     VerificationCheck(
                         type=check.get("type", "command_passes"),
                         target=check.get("target", ""),
-                        description=check.get("description", "Remediation verification"),
+                        description=check.get(
+                            "description", "Remediation verification"
+                        ),
                         expected=check.get("expected"),
                         timeout=check.get("timeout"),
                         metadata=check.get("metadata") or {},
